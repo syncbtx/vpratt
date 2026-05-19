@@ -1,3 +1,4 @@
-#vpratt
+## vpratt
 
-## Easily build mathematically correct pratt parsers
+## Mathematically correct pratt parsers, effortlessly!
+
