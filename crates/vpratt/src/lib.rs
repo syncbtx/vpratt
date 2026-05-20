@@ -35,6 +35,7 @@ pub type Precedence = u16;
 /// If a user provides a custom error type via `Result<Expr, MyError>`, the `#[parser]`
 /// macro will expect the user to implement `From<VprattError> for MyError` to bridge
 /// these engine failures into their custom domain.
+#[derive(Debug, Clone, Copy, PartialOrd)]
 pub enum VprattError<Token, PrattToken> {
     /// The iterator ran out of tokens while the engine was still expecting a right-hand side or a closing delimiter.
     UnexpectedEOF,
