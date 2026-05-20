@@ -7,7 +7,7 @@ description = "Procedural macros for the vpratt pratt parsing framework."
 repository = "https://github.com/syncbtx/vpratt"
 license = "MIT"
 keywords = ["parser", "pratt", "macro", "compiler", "ast"]
-categories = ["development-tools::procedural-macros", "parsing"]
+categories = ["procedural-macros", "parsing"]
 
 [lib]
 proc-macro = true
