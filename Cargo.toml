@@ -1,6 +1,10 @@
 [workspace.lints.rust]
+
 [workspace]
+resolver = "2"
+
 members = [
 	"crates/vpratt",
 	"crates/vpratt-macros",
-	]
+	"examples/math-lang",
+]
