@@ -2,7 +2,7 @@
 name = "vpratt"
 version = "0.1.0"
 edition = "2024"
-authors = ["Your Name <your.email@domain.com>"]
+authors = ["synkibe@gmail.com"]
 description = "A zero-boilerplate framework for building mathematically correct, O(N) Pratt parsers."
 repository = "https://github.com/syncbtx/vpratt"
 homepage = "https://github.com/syncbtx/vpratt"
