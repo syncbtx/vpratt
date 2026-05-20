@@ -1,0 +1,6 @@
+[workspace.lints.rust]
+[workspace]
+members = [
+	"crates/vpratt",
+	"crates/vpratt-macros",
+	]
