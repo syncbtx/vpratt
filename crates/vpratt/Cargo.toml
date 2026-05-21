@@ -1,9 +1,9 @@
 [package]
 name = "vpratt"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 authors = ["synkibe@gmail.com"]
-description = "A zero-boilerplate framework for building mathematically correct, O(N) Pratt parsers."
+description = "Building pratt parsers effortlessly!"
 repository = "https://github.com/syncbtx/vpratt"
 homepage = "https://github.com/syncbtx/vpratt"
 documentation = "https://doc.rs/vpratt"

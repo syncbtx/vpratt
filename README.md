@@ -1,7 +1,11 @@
 ## vpratt 
-**Mathematically correct Pratt parsers, effortlessly.**
+**Build unhinged pratt parsers**
 
-<img src="vpratt banner dark.svg">
+[![Crates.io](https://img.shields.io/crates/v/vpratt.svg)](https://crates.io/crates/vpratt)
+[![Docs.rs](https://docs.rs/vpratt/badge.svg)](https://docs.rs/vpratt)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
+<img src="vpratt banner dark.svg" alt="">
 
 Parsing mathematical expressions and expression-based languages is unnecessarily difficult.<br>
 Parser combinator libraries struggle with left-recursion and mathematical precedence.<br>
@@ -9,14 +13,44 @@ On the other hand, writing hand-rolled recursive descent and top-down parsers, l
 which tastes like bugs, not good.
 
 
-`vpratt` is a zero-boilerplate framework for building $\mathcal{O}(N)$ Pratt parsers(Top-Down Operator Precedence Parsers) in `Rust`<br>
+`vpratt` is a zero-boilerplate framework for building $\mathcal{O}(N)$ [Pratt parsers](https://en.wikipedia.org/wiki/Operator-precedence_parser) (Top-Down Operator Precedence Parsers) in Rust.<br>
 
-It provides:<br>
-1. **Static Routing:** You define your grammar once in a declarative builder DSL. This is the only time you deal with numbers.
-2. **Complete modularity:** The `vpratt` core owns and controls the state loop. You write isolated, bite-sized handler functions with your custom domain logic.
-3. **Absolute Safety:** The macro-driven architecture injects `Capability Tokens` into your handlers at compile time, guaranteeing mathematically sound Left Binding Power(LBP) state functions. No more off-by-one errors!
+## Why vpratt?
+
+|                               | `nom` / `chumsky`    | Hand-rolled     | `vpratt`          |
+|-------------------------------|----------------------|-----------------|-------------------|
+| Left-recursion                | Requires workarounds | Supported       | Supported         |
+| Operator precedence           | Manual and fragile   | Error-prone     | Declarative table |
+| Implied multiplication (`2x`) | Needs lexer hacks    | Needs lookahead | Native            |
+| Compile-time safety           | Guaranteed           | None            | Guaranteed        |
+| Boilerplate                   | High                 | Very high       | Minimal           |
+
+## Features
+
+1. **Static Routing** — Define your grammar once in a declarative builder DSL. Precedence numbers live in exactly one place.
+2. **Complete Modularity** — The `vpratt` core owns the state loop. You write isolated, bite-sized handler functions with your custom domain logic.
+3. **Absolute Safety** — The macro-driven architecture injects *Capability Tokens* into your handlers at compile time, guaranteeing mathematically sound Left Binding Power (LBP) state functions. No more off-by-one errors.
+4. **Native Juxtaposition** — Implied operations like `2x` or `f(x)` are handled natively in strict $\mathcal{O}(N)$ time, with no lexer hacks or lookaheads required.
 
 > **Read the full framework reference manual [here](DOC.md)** to see the architecture that backs the state-machine guarantees.
+
+
+## Installation
+
+```toml
+[dependencies]
+vpratt = "0.1"
+```
+
+Or via cargo:
+
+```sh
+cargo add vpratt
+```
+ 
+---
+
+
 
 ## Quick Start
 With `vpratt` you do not write the internal loops, you define your domain types, write your rules and map them to handlers. Simple!
@@ -112,29 +146,33 @@ fn implied_mul(
 }
 ```
 
-## Diagnostics & Error Handling
-vpratt was designed for production compilers and language servers.
+## Error Handling
 
-If the engine encounters a mathematically invalid state, it yields a `VprattError` enum variant.<br>
-`vpratt` has exactly 3 mechanical failure modes:<br>
+`vpratt` was designed for production compilers and language servers. The engine surfaces exactly three mechanical failure modes as variants of `VprattError`:
 
-1. Unexpected EOF: The stream ran out of tokens while the engine was actively waiting for the right-hand side of an expression (e.g., a trailing 2 + ).<br>
+| Variant                 | When it fires                                                                       |
+|-------------------------|-------------------------------------------------------------------------------------|
+| `UnexpectedEOF`         | Stream ran out while the engine expected an RHS (e.g. trailing `2 +`)               |
+| `UnmatchedDelimiter`    | A `.group()` or `.juxt()` reached EOF without its closing delimiter (e.g. `(a + b`) |
+| `UnexpectedToken`       | A token appeared with no matching prefix/terminal/group rule (e.g. `* 2`)           |
+| `ExpectedTokenMismatch` | The expected token was not found                                                    |
 
-2. Unmatched Delimiter: An enclosed format (like .group() or .juxt()) reached the end of the stream without encountering its required closing delimiter (e.g., (a + b).<br>
-
-3. Unexpected Token: The engine expected an expression to begin, but the current token has no .prefix(), .terminal(), or .group()<br>
-rule associated with it (e.g., encountering a * at the start of a statement).<br>
+These map cleanly onto your own diagnostic types:
 
 ```rust
-impl From<VprattError> for MyCustomError {
+impl From<VprattError> for MyDiagnostic {
     fn from(err: VprattError) -> Self {
         match err {
-            VprattError::UnexpectedEOF => MyCustomError::MissingExpression,
-            // ... map mechanical errors to your beautiful, spanned diagnostics
+            VprattError::UnexpectedEOF              => MyDiagnostic::MissingExpression,
+            VprattError::UnmatchedDelimiter         => MyDiagnostic::UnclosedGroup,
+            VprattError::UnexpectedToken            => MyDiagnostic::InvalidToken,
+            VprattError::ExpectedTokenMismatch      => MyDiagnostic::ExpectedTokenMismatch,
         }
     }
 }
 ```
+ 
+---
 
 ## Installation
 ```bash

@@ -91,6 +91,10 @@ impl From<vpratt::VprattError<Token, TokenKind>> for MathError {
                 message: format!("Expected closing delimiter {:?}, but found {:?}", expected, found.kind),
                 span: found.span
             },
+            vpratt::VprattError::ExpectedTokenMismatch(expected, found) => MathError{
+                message: format!("Expected {:?} but found {:?}", expected, found.kind),
+                span: found.span
+            }
         }
     }
 }
