@@ -1,6 +1,6 @@
 [package]
 name = "vpratt"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 authors = ["synkibe@gmail.com"]
 description = "Building pratt parsers effortlessly!"
@@ -13,5 +13,5 @@ keywords = ["parser", "pratt", "expression", "compiler", "ast"]
 categories = ["compilers","parsing", "no-std"]
 
 [dependencies]
-vpratt-macros = {path = "../vpratt-macros", version = "0.1.2"}
+vpratt-macros = {path = "../vpratt-macros", version = "0.1.3"}
 
