@@ -1,0 +1,11 @@
+[package]
+name = "calc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+vpratt = {path = "../../crates/vpratt"}
+logos = "0.16.0"
+
+[lints]
+workspace = true
