@@ -1,6 +1,6 @@
 [package]
 name = "vpratt"
-version = "0.1.0"
+version = "0.1.1i"
 edition = "2024"
 authors = ["synkibe@gmail.com"]
 description = "A zero-boilerplate framework for building mathematically correct, O(N) Pratt parsers."

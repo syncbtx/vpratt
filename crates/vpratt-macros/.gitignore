@@ -1,1 +1,18 @@
-/target
+# === Rust / Cargo ===
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# === JetBrains RustRover / IntelliJ ===
+.idea/
+*.iml
+*.iws
+
+# === Local Environment / Secrets ===
+.env
+.env.*
+!.env.example
+
+# === Operating System Files ===
+.DS_Store
+Thumbs.db
