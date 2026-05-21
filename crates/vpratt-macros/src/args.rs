@@ -1,23 +1,15 @@
-use quote::ToTokens;
 use syn::parse::{Parse, ParseStream};
-use syn::{Expr, Ident, MetaNameValue, Token, Type};
-use syn::punctuated::Punctuated;
+use syn::{Expr, Ident, Token, Type};
 
-/// Represents the `#[vpratt::parser(...)]` arguments
 pub struct ParserConfig {
-    // Required
     pub stream: Expr,
-
-    // Explicit Type Definitions
-    pub item: Option<Type>,    // e.g., Token<'a>
-    pub token: Option<Type>,   // e.g., TokenKind
-    pub output: Option<Type>,  // e.g., Expr
-    pub error: Option<Type>,   // e.g., CalcError (defaults to vpratt::VprattError)
-
-    // Logic Callbacks
-    pub extract: Option<Expr>, // e.g., |t| t.kind or extract_kind_fn
-    pub entry: Option<Ident>,  // e.g., parse_full_expression
-    pub table: Option<Expr>,   // e.g., Self::TABLE
+    pub item: Option<Type>,
+    pub token: Option<Type>,
+    pub output: Option<Type>,
+    pub error: Option<Type>,
+    pub extract: Option<Expr>,
+    pub entry: Option<Ident>,
+    pub table: Option<Expr>,
 }
 
 impl Parse for ParserConfig {
@@ -31,33 +23,32 @@ impl Parse for ParserConfig {
         let mut entry = None;
         let mut table = None;
 
-        let args = Punctuated::<MetaNameValue, Token![,]>::parse_terminated(input)?;
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
 
-        for arg in args {
-            let key = arg.path.get_ident()
-                .ok_or_else(|| syn::Error::new_spanned(&arg.path, "Expected identifier"))?
-                .to_string();
+            input.parse::<Token![=]>()?;
 
-            // We parse the right-hand side as an expression first
-            let value = syn::parse2::<Expr>(arg.value.to_token_stream())?;
+            let key_str = key.to_string();
+            match key_str.as_str() {
+                "item"   => item = Some(input.parse::<Type>()?),
+                "token"  => token = Some(input.parse::<Type>()?),
+                "output" => output = Some(input.parse::<Type>()?),
+                "error"  => error = Some(input.parse::<Type>()?),
 
-            match key.as_str() {
-                "stream"  => stream = Some(value),
+                "stream"  => stream = Some(input.parse::<Expr>()?),
+                "extract" => extract = Some(input.parse::<Expr>()?),
+                "table"   => table = Some(input.parse::<Expr>()?),
 
-                // For types and idents, we convert the Expr's token stream back into the correct syn AST node
-                "item"    => item = Some(syn::parse2(value.to_token_stream())?),
-                "token"   => token = Some(syn::parse2(value.to_token_stream())?),
-                "output"  => output = Some(syn::parse2(value.to_token_stream())?),
-                "error"   => error = Some(syn::parse2(value.to_token_stream())?),
-                "entry"   => entry = Some(syn::parse2(value.to_token_stream())?),
-
-                "extract" => extract = Some(value),
-                "table"   => table = Some(value),
+                "entry"  => entry = Some(input.parse::<Ident>()?),
 
                 _ => return Err(syn::Error::new_spanned(
-                    arg.path,
+                    key,
                     "Unknown parser attribute argument. Expected one of: 'stream', 'item', 'token', 'output', 'error', 'extract', 'entry', 'table'"
                 )),
+            }
+
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
             }
         }
 
