@@ -44,6 +44,7 @@ pub enum VprattError<Token, PrattToken> {
     UnexpectedEOF,
     UnexpectedToken(Token),
     UnmatchedDelimiter(PrattToken, Token),
+    ExpectedTokenMismatch(PrattToken, Token),
 }
 
 impl<Token: Debug, PrattToken: Debug> Display for VprattError<Token, PrattToken> {
@@ -52,6 +53,9 @@ impl<Token: Debug, PrattToken: Debug> Display for VprattError<Token, PrattToken>
             Self::UnexpectedEOF => write!(f, "Syntax error: Unexpected end of file"),
             Self::UnexpectedToken(tok) => write!(f, "Syntax error: Unexpected token {:?}", tok),
             Self::UnmatchedDelimiter(exp, found) => {
+                write!(f, "Syntax error: Expected closing delimiter {:?}, but found {:?}", exp, found)
+            }
+            Self::ExpectedTokenMismatch(exp, found) => {
                 write!(f, "Syntax error: Expected {:?}, but found {:?}", exp, found)
             }
         }
@@ -136,6 +140,17 @@ pub trait VprattCore {
         Ok(lhs)
     }
 }
+
+// experimental entry point
+// pub trait ParseFromStream<I>: Sized
+// where
+//     I: Iterator
+// {
+//     type Parser: VprattCore<Output = Self>;
+//     fn parse_stream(
+//         stream: I
+//     ) -> core::result::Result<Self, <Self::Parser as VprattCore>::Error>;
+// }
 
 /// Defines how operators of the same precedence bind to each other.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -247,6 +262,49 @@ impl<P: VprattCore> Enclosed<P> {
         else {
             Err(P::__convert_error__(VprattError::UnmatchedDelimiter(self.expected_close, token)))
         }
+    }
+}
+
+pub struct Expect<P: VprattCore>{
+    pub expected: P::PrattToken,
+}
+
+impl<P: VprattCore> Expect<P>  {
+    pub fn new(expected: P::PrattToken) -> Self { Self { expected }}
+    pub fn parse(&self, parser: &mut P) -> core::result::Result<P::Item, P::Error>{
+        let token = match parser.__next__(){
+            Some(t) => t,
+            None => return Err(P::__convert_error__(VprattError::UnexpectedEOF))
+        };
+
+        if self.expected == P::__extract__(&token){
+            Ok(token)
+        }
+        else{
+            Err(P::__convert_error__(VprattError::ExpectedTokenMismatch(self.expected, token)))
+        }
+}
+}
+
+pub struct Accept<P: VprattCore>{
+    pub target: P::PrattToken
+}
+
+impl<P: VprattCore> Accept<P>{
+    pub fn new(target: P::PrattToken) -> Self { Self{ target } }
+    pub fn parse(&self, parser: &mut P) -> core::result::Result<Option<P::Item>, P::Error>{
+         let is_match = match parser.__peek__(){
+            Some(t) => P::__extract__(t) == self.target,
+            None => false
+        };
+
+        if is_match{
+            Ok(Some(parser.__next__().unwrap()))
+        }
+        else{
+            Ok(None)
+        }
+
     }
 }
 

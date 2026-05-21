@@ -316,5 +316,6 @@ pub fn generate_core(
                 <Self as ::vpratt::VprattCore>::__pratt_parse_internal__(self, 0)
             }
         }
+        
     })
 }
