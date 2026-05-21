@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"attr":["handler","parser"],"enum":["Associativity","VprattError"],"struct":["Consumed","Enclosed","Reset","Resume","Rhs","Table"],"trait":["VprattCore"],"type":["Precedence"]};
