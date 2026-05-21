@@ -22,98 +22,64 @@ It provides:<br>
 With `vpratt` you do not write the internal loops, you define your domain types, write your rules and map them to handlers. Simple!
 
 ```rust
-use core::ops::Range;
-use core::iter::Peekable;
-use vpratt::{Table, Consumed, Rhs, VprattError};
+use vpratt::{Consumed, Rhs, Table, Associativity::Left};
 use TokenKind::*;
 
-// Domain routing type: used by the engine to navigate precedence
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TokenKind{ Num(f64), Plus, Minus,}
+
 #[derive(Debug, Clone, PartialEq)]
-pub enum TokenKind {
-    Num(f64),
-    Plus, Minus, Star, Slash
-}
+pub enum Expr{ Num(f64), Add(Box<Expr>, Box<Expr>), Sub(Box<Expr>, Box<Expr>), Neg(Box<Expr>)}
 
-// Rich token type
-#[derive(Debug)]
-pub struct Token {
-    kind: TokenKind,
-    span: Range<usize>
-}
-
-// Domain AST type
-#[derive(Debug)]
-pub enum Expr {
-    Num(f64),
-    Neg(Box<Expr>),
-    Add(Box<Expr>, Box<Expr>), Sub(Box<Expr>, Box<Expr>),
-    Mul(Box<Expr>, Box<Expr>), Div(Box<Expr>, Box<Expr>),
-}
-
-// Dummy struct to hold the stream of tokens.
-// Note: you can pass additional state to your handlers via `self`
-#[derive(Debug)]
-pub struct Calc<I: Iterator<Item = Token>> {
-    stream: Peekable<I>
-}
+pub struct Calc<I: Iterator<Item = TokenKind>>{ stream: core::iter::Peekable<I> }
 
 #[vpratt::parser(
-    stream = self.stream,                   // the stream is expected to be a peekable iterator
-    entry  = parse_calc,                   // custom entry
-    token  = TokenKind,                   // defines the routing token type     
-    extract = |t: &Token| t.kind.clone() // tells the core how to extract the routing token from the Iterator's Item.
+    stream = self.stream,
+    output = Expr,
+    item   = TokenKind,
+    token  = TokenKind,
 )]
-impl<I: Iterator<Item = Token>> Calc<I> {
-    pub fn new(stream: I) -> Self { Self { stream: stream.peekable() } }
+impl<I: Iterator<Item = TokenKind>> Calc<I>{
+    pub fn new(stream: I) -> Calc<I>{ Self{stream: stream.peekable()}}
 
     const TABLE: Table<Self> = Table::new()
-        .terminal(Num(0.0),     Self::num)
-        
-        .infix( 10, Left, Plus,  Self::additive)
-        .infix( 10, Left, Minus, Self::additive)
-        .infix( 20, Left, Star,  Self::multiplicative)
-        .infix( 20, Left, Slash, Self::multiplicative)
-        .prefix(30, Minus, Self::negate); 
+        .terminal(Num(0.0), Self::num)
+        .infix(20, Left, Plus, Self::add)
+        .infix(20, Left, Minus, Self::sub)
+        .prefix(30, Minus, Self::negate);
 
-    #[vpratt::handler] // marks a handler and provides trace features for debugging
-    fn num(_: &mut Self, consumed: Consumed<Token>) -> Result<Expr, VprattError> {
-        let Num(n) = consumed.token.kind else { unreachable!() };
-        Ok(Expr::Num(n))
-    }
-    
     #[vpratt::handler]
-    fn negate(p: &mut Self, _: Consumed<Token>,  rhs: Rhs<Self>) -> Result<Expr, VprattError> {
-        Ok(Expr::Neg(Box::new(rhs,parse(p)?)))
-    }
-
-    #[vpratt::handler] 
-    fn additive(p: &mut Self, lhs: Expr, op: Consumed<Token>, rhs: Rhs<Self>) -> Result<Expr, VprattError> {
-        match op.token.kind {
-            Plus => Ok(Expr::Add(Box::new(lhs), Box::new(rhs.parse(p)?))),
-            Minus => Ok(Expr::Sub(Box::new(lhs), Box::new(rhs.parse(p)?))),
-            _ => unreachable!()
-        }
+    fn num(&mut self, c: Consumed<TokenKind>) -> vpratt::Result<Self>{
+        match c.token{ Num(val) => Ok(Expr::Num(val)), _ => unreachable!() }
     }
 
     #[vpratt::handler]
-    fn multiplicative(p: &mut Self, lhs: Expr, op: Consumed<Token>, rhs: Rhs<Self>) -> Result<Expr, VprattError> {
-        match op.token.kind {
-            Star => Ok(Expr::Mul(Box::new(lhs), Box::new(rhs.parse(p)?))),
-            Slash => Ok(Expr::Div(Box::new(lhs), Box::new(rhs.parse(p)?))),
-            _ => unreachable!()
-        }
+    fn add(&mut self, lhs: Expr, _op: Consumed<TokenKind>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Add(Box::new(lhs), Box::new(rhs.parse(self)?)))
+    }
+
+    #[vpratt::handler]
+    fn sub(&mut self, lhs: Expr, _op: Consumed<TokenKind>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Sub(Box::new(lhs), Box::new(rhs.parse(self)?)))
+    }
+
+    #[vpratt::handler]
+    fn negate(&mut self, _op: Consumed<TokenKind>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Neg(Box::new(rhs.parse(self)?)))
     }
 }
 
-fn main() -> Result<(), VprattError> {
-    let src = "2 + 3 * 4";
-    let tokens: Vec<Token> = lexer.tokenize(src); // Assuming a hypothetical lexer is used
-    let parser = Calc::new(tokens.into_iter());
-    let ast = parser.parse_calc()?;
-
-    println!("{:#?}", ast);
-    Ok(())
+fn main() {
+    // let src = "2 + -3 - 4 + 5";
+    let tokens = vec![Num(2.0), Plus, Minus, Num(3.0), Minus, Num(4.0), Plus, Num(5.0) ];
+    let mut calc = Calc::new(tokens.into_iter());
+    let ast = calc.pratt_parse();
+    match ast {
+        Ok(ast) => println!("AST:\n {:#?}", ast),
+        Err(err) => eprintln!("Error: {:#?}", err)
+    }
 }
+
 
 ```
 
@@ -132,15 +98,15 @@ Because `vpratt` allows handlers to dynamically reinject synthetic AST nodes bac
 // 2. implied formats have the signature used below
 #[vpratt::handler]
 fn implied_mul(
-    p: &mut Self, 
+    &mut Self, 
     lhs: Expr, 
     _: Consumed<Token>, 
     resume: Resume<Self> // Uses Resume to immediately re-enter the engine
-) -> Result<Expr, VprattError> {
+) -> vpratt::Result<Self> {
     
     // We construct a multiplication node, and use our capability token 
     // to grab the right side without breaking precedence.
-    let rhs = resume.parse(p)?;
+    let rhs = resume.parse(self)?;
     
     Ok(Expr::Mul(Box::new(lhs), Box::new(rhs)))
 }

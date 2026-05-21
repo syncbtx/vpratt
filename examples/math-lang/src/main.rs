@@ -1,5 +1,5 @@
-use std::iter::Peekable;
-use std::ops::Range;
+use core::iter::Peekable;
+use core::ops::Range;
 use vpratt::{Consumed, Rhs, Enclosed, Resume, Associativity::{Left, Right}};
 use logos::Logos;
 use TokenKind::*;
@@ -107,8 +107,11 @@ impl<I: Iterator<Item = Token>> MathParser<I> {
 
 #[vpratt::parser(
     stream = self.stream,
-    entry = parse_math,
-    token = TokenKind,
+    output = Expr,                // custom AST type
+    item = Token,                 // type of item yielded by the stream iterator
+    entry = parse_math,           // custom entry name for the main pratt parse function
+    token = TokenKind,            // internally referred to as PrattToken: the routing token, extracted from the item type
+    error = MathError,            // custom error type, must
     extract = |t: &Token| t.kind, // can also be: extract = get_kind, {fn get_kind(t: &Token) -> TokenKind { t.kind }?}
 )]
 impl<I: Iterator<Item = Token>> MathParser<I> {
@@ -133,7 +136,7 @@ impl<I: Iterator<Item = Token>> MathParser<I> {
 
 
     #[vpratt::handler]
-    fn num(&mut self, token: Consumed<Token>) -> Result<Expr, MathError> {
+    fn num(&mut self, token: Consumed<Token>) -> vpratt::Result<Self>{
         let val = token.token.lexeme.parse::<f64>().map_err(|_| MathError {
             message: "Invalid float".into(),
             span: token.token.span,
@@ -142,48 +145,48 @@ impl<I: Iterator<Item = Token>> MathParser<I> {
     }
 
     #[vpratt::handler]
-    fn var(&mut self, token: Consumed<Token>) -> Result<Expr, MathError> {
+    fn var(&mut self, token: Consumed<Token>) -> vpratt::Result<Self>{
         Ok(Expr::Var(token.token.lexeme))
     }
 
     #[vpratt::handler]
-    fn group(&mut self, open: Consumed<Token>, enclosed: Enclosed<Self>) -> Result<Expr, MathError> {
+    fn group(&mut self, open: Consumed<Token>, enclosed: Enclosed<Self>) -> vpratt::Result<Self>{
         let (inner, close) = enclosed.parse(self)?;
         Ok(Expr::Group(Box::new(inner), open.token.span.start .. close.span.end))
     }
 
     #[vpratt::handler]
-    fn negate(&mut self, _op: Consumed<Token>, rhs: Rhs<Self>) -> Result<Expr, MathError> {
+    fn negate(&mut self, _op: Consumed<Token>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
         Ok(Expr::Neg(Box::new(rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn power(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> Result<Expr, MathError> {
+    fn power(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
         Ok(Expr::Pow(Box::new(lhs), Box::new(rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn mul(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> Result<Expr, MathError> {
+    fn mul(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
         Ok(Expr::Mul(Box::new(lhs), Box::new(rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn div(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> Result<Expr, MathError> {
+    fn div(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
         Ok(Expr::Div(Box::new(lhs), Box::new(rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn add(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> Result<Expr, MathError> {
+    fn add(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
         Ok(Expr::Add(Box::new(lhs), Box::new(rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn sub(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> Result<Expr, MathError> {
+    fn sub(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
         Ok(Expr::Sub(Box::new(lhs), Box::new(rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn factorial(&mut self, lhs: Expr, _op: Consumed<Token>) -> Result<Expr, MathError> {
+    fn factorial(&mut self, lhs: Expr, _op: Consumed<Token>) -> vpratt::Result<Self>{
         Ok(Expr::Fact(Box::new(lhs)))
     }
 
@@ -193,7 +196,7 @@ impl<I: Iterator<Item = Token>> MathParser<I> {
         lhs: Expr,
         token: Consumed<Token>,
         resume: Resume<Self>
-    ) -> Result<Expr, MathError> {
+    ) -> vpratt::Result<Self>{
         let right_start = Expr::Var(token.token.lexeme);
 
         let right_full = resume.parse(self, right_start)?;
@@ -208,7 +211,7 @@ impl<I: Iterator<Item = Token>> MathParser<I> {
         _: Consumed<Token>,
         enclosed: Enclosed<Self>,
         resume: Resume<Self>
-    ) -> Result<Expr, MathError> {
+    ) -> vpratt::Result<Self>{
         let (inner, _) = enclosed.parse(self)?;
         let node = Expr::Mul(Box::new(lhs), Box::new(inner));
         resume.parse(self, node)
@@ -224,7 +227,7 @@ fn main() {
 
     match parser.parse_math() {
         Ok(ast) => {
-            println!("{}\nAST:\n{:#?}", src,ast);
+            println!("{}\nAST:\n{:#?}", src ,ast);
         }
         Err(err) => {
             eprintln!("Parse Error: {} (Span: {:?})", err.message, err.span);

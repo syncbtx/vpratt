@@ -5,6 +5,6 @@ resolver = "2"
 
 members = [
 	"crates/vpratt",
-	"crates/vpratt-macros",
+	"crates/vpratt-macros", "examples/calc",
 	"examples/math-lang",
 ]

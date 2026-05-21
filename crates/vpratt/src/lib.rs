@@ -21,7 +21,11 @@
 
 #![no_std]
 
+pub mod prelude;
+
 use core::marker::PhantomData;
+use core::fmt::{Debug, Display, Formatter, Result as FmtResult};
+use core::error::Error as CoreError;
 
 pub use vpratt_macros::parser;
 pub use vpratt_macros::handler;
@@ -32,17 +36,34 @@ pub type Precedence = u16;
 
 /// The base mechanical errors that the `vpratt` engine can encounter during parsing.
 ///
-/// If a user provides a custom error type via `Result<Expr, MyError>`, the `#[parser]`
+/// If a user provides a custom error type via `Result<Expr, MyError>`, the `#[vpratt::parser]`
 /// macro will expect the user to implement `From<VprattError> for MyError` to bridge
 /// these engine failures into their custom domain.
+#[derive(Debug, Clone, PartialEq)]
 pub enum VprattError<Token, PrattToken> {
-    /// The iterator ran out of tokens while the engine was still expecting a right-hand side or a closing delimiter.
     UnexpectedEOF,
-    /// The engine encountered a token in a prefix position (NUD) that has no routing rule.
     UnexpectedToken(Token),
-    /// The engine successfully parsed an enclosed expression, but the closing token did not match the expected token.
     UnmatchedDelimiter(PrattToken, Token),
 }
+
+impl<Token: Debug, PrattToken: Debug> Display for VprattError<Token, PrattToken> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Self::UnexpectedEOF => write!(f, "Syntax error: Unexpected end of file"),
+            Self::UnexpectedToken(tok) => write!(f, "Syntax error: Unexpected token {:?}", tok),
+            Self::UnmatchedDelimiter(exp, found) => {
+                write!(f, "Syntax error: Expected {:?}, but found {:?}", exp, found)
+            }
+        }
+    }
+}
+
+impl<Token: Debug, PrattToken: Debug> CoreError for VprattError<Token, PrattToken> {}
+
+pub type Result<P> = core::result::Result<
+    <P as crate::VprattCore>::Output,
+    <P as crate::VprattCore>::Error
+>;
 
 /// The internal trait powering the Left Binding Power (LBP) loop.
 ///
@@ -60,7 +81,7 @@ pub trait VprattCore {
 
     /// The error type returned by the handlers.
     type Error;
-
+    
     #[doc(hidden)]
     fn __next__(&mut self) -> Option<Self::Item>;
     #[doc(hidden)]
@@ -73,11 +94,11 @@ pub trait VprattCore {
 
     /// The Null Denotation (NUD) router. Handles prefix expressions (numbers, variables, `-x`).
     #[doc(hidden)]
-    fn __nud__(&mut self, token: Self::Item) -> Result<Self::Output, Self::Error>;
+    fn __nud__(&mut self, token: Self::Item) -> Result<Self>;
 
     /// The Left Denotation (LED) router. Handles infix expressions (`+`, `*`, `^`).
     #[doc(hidden)]
-    fn __led__(&mut self, lhs: Self::Output, token: Self::Item) -> Result<Self::Output, Self::Error>;
+    fn __led__(&mut self, lhs: Self::Output, token: Self::Item) -> Result<Self>;
 
     #[doc(hidden)]
     fn __convert_error__(err: VprattError<Self::Item, Self::PrattToken>) -> Self::Error;
@@ -85,7 +106,7 @@ pub trait VprattCore {
     /// The core Pratt parsing algorithm.
     /// Consumes a prefix token, routes it, and then yields to the infix loop.
     #[doc(hidden)]
-    fn __pratt_parse_internal__(&mut self, minbp: Precedence) -> Result<Self::Output, Self::Error> {
+    fn __pratt_parse_internal__(&mut self, minbp: Precedence) -> Result<Self> {
         let lhs = {
             let token = match self.__next__() {
                 Some(token) => token,
@@ -99,7 +120,7 @@ pub trait VprattCore {
     /// The Left Binding Power (LBP) loop.
     /// Continuously consumes tokens as long as their binding power is strictly greater than the current context.
     #[doc(hidden)]
-    fn __pratt_resume_infix__(&mut self, mut lhs: Self::Output, rbp: Precedence) -> Result<Self::Output, Self::Error> {
+    fn __pratt_resume_infix__(&mut self, mut lhs: Self::Output, rbp: Precedence) -> Result<Self> {
         loop {
             let lbp = match self.__peek__() {
                 Some(peeked) => Self::__lbp__(peeked),
@@ -150,7 +171,7 @@ impl<P: VprattCore> Rhs<P> {
 
     /// Executes the Pratt loop to resolve the right-hand side of the expression.
     #[inline(always)]
-    pub fn parse(&self, p: &mut P) -> Result<P::Output, P::Error> {
+    pub fn parse(&self, p: &mut P) -> Result<P> {
         p.__pratt_parse_internal__(self.rbp)
     }
 }
@@ -169,7 +190,7 @@ impl<P: VprattCore> Reset<P> {
 
     /// Executes the Pratt loop from a baseline precedence of 0.
     #[inline(always)]
-    pub fn parse(&self, p: &mut P) -> Result<P::Output, P::Error> {
+    pub fn parse(&self, p: &mut P) -> Result<P> {
         p.__pratt_parse_internal__(0)
     }
 }
@@ -190,7 +211,7 @@ impl<P: VprattCore> Resume<P> {
 
     /// Resumes the infix loop, using the provided `lhs` as the base expression.
     #[inline(always)]
-    pub fn parse(&self, p: &mut P, lhs: P::Output) -> Result<P::Output, P::Error> {
+    pub fn parse(&self, p: &mut P, lhs: P::Output) -> Result<P> {
         p.__pratt_resume_infix__(lhs, self.rbp)
     }
 }
@@ -213,7 +234,7 @@ impl<P: VprattCore> Enclosed<P> {
     ///
     /// Returns a tuple containing the generated AST node and the raw closing token.
     #[inline(always)]
-    pub fn parse(&self, p: &mut P) -> Result<(P::Output, P::Item), P::Error> {
+    pub fn parse(&self, p: &mut P) -> core::result::Result<(P::Output, P::Item), P::Error> {
         let inner = p.__pratt_parse_internal__(0)?;
         let token = match p.__next__(){
             Some(token) => token,
@@ -248,7 +269,7 @@ impl<P: VprattCore> Table<P> {
     pub const fn terminal(
         self,
         _token: P::PrattToken,
-        _handler: fn(&mut P, Consumed<P::Item>) -> Result<P::Output, P::Error>
+        _handler: fn(&mut P, Consumed<P::Item>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a token that opens an enclosed group (e.g., standard parentheses `(a + b)`).
@@ -256,7 +277,7 @@ impl<P: VprattCore> Table<P> {
         self,
         _open: P::PrattToken,
         _close: P::PrattToken,
-        _handler: fn(&mut P, Consumed<P::Item>, Enclosed<P>) -> Result<P::Output, P::Error>
+        _handler: fn(&mut P, Consumed<P::Item>, Enclosed<P>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a prefix operator (e.g., the unary minus in `-5` or logical NOT in `!true`).
@@ -264,7 +285,7 @@ impl<P: VprattCore> Table<P> {
         self,
         _bp: Precedence,
         _token: P::PrattToken,
-        _handler: fn(&mut P, Consumed<P::Item>, Rhs<P>) -> Result<P::Output, P::Error>
+        _handler: fn(&mut P, Consumed<P::Item>, Rhs<P>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a standard binary infix operator (e.g., `+`, `-`, `*`, `/`, `^`).
@@ -273,7 +294,7 @@ impl<P: VprattCore> Table<P> {
         _bp: Precedence,
         _assoc: Associativity,
         _token: P::PrattToken,
-        _handler: fn(&mut P, P::Output, Consumed<P::Item>, Rhs<P>) -> Result<P::Output, P::Error>
+        _handler: fn(&mut P, P::Output, Consumed<P::Item>, Rhs<P>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a postfix operator (e.g., the factorial symbol in `5!`).
@@ -281,7 +302,7 @@ impl<P: VprattCore> Table<P> {
         self,
         _bp: Precedence,
         _token: P::PrattToken,
-        _handler: fn(&mut P, P::Output, Consumed<P::Item>) -> Result<P::Output, P::Error>
+        _handler: fn(&mut P, P::Output, Consumed<P::Item>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a grouped juxtaposition operation (e.g., implicit multiplication via parentheses like `2(a+b)`).
@@ -293,7 +314,7 @@ impl<P: VprattCore> Table<P> {
         _bp: Precedence,
         _open: P::PrattToken,
         _close: P::PrattToken,
-        _handler: fn(&mut P, P::Output, Consumed<P::Item>, Enclosed<P>, Resume<P>) -> Result<P::Output, P::Error>
+        _handler: fn(&mut P, P::Output, Consumed<P::Item>, Enclosed<P>, Resume<P>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a terminal juxtaposition operation (e.g., implicit multiplication via variables like `2x`).
@@ -305,6 +326,6 @@ impl<P: VprattCore> Table<P> {
         _bp: Precedence,
         _assoc: Associativity,
         _token: P::PrattToken,
-        _handler: fn(&mut P, P::Output, Consumed<P::Item>, Resume<P>) -> Result<P::Output, P::Error>
+        _handler: fn(&mut P, P::Output, Consumed<P::Item>, Resume<P>) -> Result<P>
     ) -> Self { self }
 }
