@@ -1,6 +1,6 @@
 [package]
 name = "vpratt-macros"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 authors = ["synkibe@gmail.com"]
 description = "Procedural macros for the vpratt pratt parsing framework."

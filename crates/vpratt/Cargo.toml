@@ -13,5 +13,5 @@ keywords = ["parser", "pratt", "expression", "compiler", "ast"]
 categories = ["compilers","parsing", "no-std"]
 
 [dependencies]
-vpratt-macros = {path = "../vpratt-macros", version = "0.1.0"}
+vpratt-macros = {path = "../vpratt-macros", version = "0.1.2"}
 
