@@ -172,9 +172,4 @@ impl From<VprattError> for MyDiagnostic {
 }
 ```
  
----
 
-## Installation
-```bash
-cargo add vpratt
-```
