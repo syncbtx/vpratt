@@ -1,19 +1,22 @@
-# === Rust / Cargo ===
+.history/
 /target/
 **/*.rs.bk
 Cargo.lock
 
-# === JetBrains RustRover / IntelliJ ===
-.idea/
-.history/
-*.iml
-*.iws
 
-# === Local Environment / Secrets ===
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+
 .env
 .env.*
 !.env.example
 
-# === Operating System Files ===
+
 .DS_Store
 Thumbs.db
