@@ -1,9 +1,9 @@
 [package]
 name = "vpratt"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2024"
 authors = ["synkibe@gmail.com"]
-description = "Building pratt parsers effortlessly!"
+description = "absolute zenith of pratt parsing"
 repository = "https://github.com/syncbtx/vpratt"
 homepage = "https://github.com/syncbtx/vpratt"
 documentation = "https://doc.rs/vpratt"
@@ -13,5 +13,5 @@ keywords = ["parser", "pratt", "expression", "compiler", "ast"]
 categories = ["compilers","parsing", "no-std"]
 
 [dependencies]
-vpratt-macros = {path = "../vpratt-macros", version = "0.1.3"}
+vpratt-macros = {path = "../vpratt-macros"}
 
