@@ -213,13 +213,13 @@ impl<P: VprattCore> Rhs<P> {
 ///
 /// Useful for situations where you want to start a completely fresh parsing sequence
 /// from the current position in the token stream, ignoring any previous binding powers.
-pub struct Reset<P: VprattCore> {
+pub struct Subexpr<P: VprattCore> {
     pub _marker: PhantomData<P>
 }
 
-impl<P: VprattCore> Reset<P> {
+impl<P: VprattCore> Subexpr<P> {
     #[doc(hidden)]
-    pub fn __new__() -> Self { Reset { _marker: PhantomData } }
+    pub fn __new__() -> Self { Subexpr { _marker: PhantomData } }
 
     /// Executes the Pratt loop from a baseline precedence of 0.
     #[inline(always)]
@@ -362,6 +362,12 @@ impl<P: VprattCore> Table<P> {
         _bp: Precedence,
         _token: P::PrattToken,
         _handler: fn(&mut P, Consumed<P::Item>, Rhs<P>) -> Result<P>
+    ) -> Self { self }
+
+    pub const fn structural(
+        self,
+        _token: P::PrattToken,
+        _handler: fn(&mut P, Consumed<P::Item>, Subexpr<P>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a standard binary infix operator (e.g., `+`, `-`, `*`, `/`, `^`).

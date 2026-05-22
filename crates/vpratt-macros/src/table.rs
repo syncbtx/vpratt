@@ -25,6 +25,11 @@ pub enum Entry {
         handler: Expr,
         span: Span,
     },
+    Structural {
+        token: Expr,
+        handler: Expr,
+        span: Span,
+    },
     Prefix {
         bp: Expr,
         token: Expr,

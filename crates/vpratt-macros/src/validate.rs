@@ -36,6 +36,7 @@ pub fn validate(table: &TableDef) -> syn::Result<()> {
         let (phase_set, phase_name, token_expr, span) = match entry {
             Entry::Terminal { token, span, .. } => (&mut seen_nud, "Terminal/Prefix/Group", token, span),
             Entry::Group { open, span, .. }     => (&mut seen_nud, "Terminal/Prefix/Group", open, span),
+            Entry::Structural { token, span, .. } => (&mut seen_nud, "Terminal/Prefix/Group/Structural", token, span),
             Entry::Prefix { token, span, .. }   => (&mut seen_nud, "Terminal/Prefix/Group", token, span),
             Entry::Infix { token, span, .. }    => (&mut seen_led, "Infix/Postfix/Juxt", token, span),
             Entry::Postfix { token, span, .. }  => (&mut seen_led, "Infix/Postfix/Juxt", token, span),

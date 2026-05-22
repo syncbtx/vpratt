@@ -57,6 +57,6 @@ These tokens offer restricted access to the core engine with absolute safety gua
 | :--- | :--- | :--- |
 | **`Consumed`** | Grants access to the exact token that triggered the handler. | `consumed.token` |
 | **`Rhs`** | Safely triggers the engine to parse the right side using the correct Right Binding Power (`rbp`). | `rhs.parse(self)?` |
-| **`Reset`** | Enters a sub-expression parsing context with an `rbp` of `0`. | `reset.parse(self)?` |
+| **`Subexpr`** | Enters a sub-expression parsing context with an `rbp` of `0`. | `reset.parse(self)?` |
 | **`Enclosed`** | Enters a sub-expression parsing context, but also strictly consumes the expected closing delimiter. | `enclosed.parse(self)?` |
 | **`Resume`** | Re-enters the infix phase with a synthetic `lhs` and the correct `rbp`. | `resume.parse(self, lhs)?` |

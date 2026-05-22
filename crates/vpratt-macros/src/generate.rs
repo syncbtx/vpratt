@@ -137,6 +137,17 @@ pub fn generate_core(
                 });
             }
 
+            Entry::Structural { token, handler, .. } => {
+                let pat = to_pattern(token)?;
+                nud_arms.push(quote! {
+                    #pat => #handler(
+                        self,
+                        ::vpratt::Consumed::__new__(__token__),
+                        ::vpratt::Subexpr::__new__(),
+                    ),
+                });
+            }
+            
             Entry::Prefix { bp, token, handler, .. } => {
                 let pat = to_pattern(token)?;
                 nud_arms.push(quote! {
