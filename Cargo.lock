@@ -132,7 +132,7 @@ dependencies = [
 
 [[package]]
 name = "vpratt-macros"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "proc-macro2",
  "quote",
