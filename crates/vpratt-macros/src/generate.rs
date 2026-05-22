@@ -143,6 +143,7 @@ pub fn generate_core(
                     #pat => #handler(
                         self,
                         ::vpratt::Consumed::__new__(__token__),
+                        ::vpratt::Atom::__new__(),
                         ::vpratt::Subexpr::__new__(),
                     ),
                 });

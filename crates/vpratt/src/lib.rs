@@ -162,6 +162,7 @@ pub enum Associativity {
 }
 
 /// A wrapper proving that a specific token was consumed by the engine and is ready for use.
+#[derive(Debug, Clone, Copy)]
 pub struct Consumed<T> {
     pub token: T
 }
@@ -171,9 +172,28 @@ impl<T> Consumed<T> {
     pub fn __new__(token: T) -> Self { Self { token } }
 }
 
+
+#[derive(Debug, Clone, Copy)]
+pub struct Atom<P: VprattCore> {
+    _marker: PhantomData<P>,
+}
+
+impl<P: VprattCore> Atom<P> {
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn __new__() -> Self { Self { _marker: PhantomData } }
+
+    #[inline(always)]
+    pub fn parse(&self, p: &mut P) -> Result<P> {
+        let token = p.__next__().ok_or_else(|| P::__convert_error__(VprattError::UnexpectedEOF))?;
+        p.__nud__(token)
+    }
+}
+
+
 /// A capability token that delegates a consumed token back to the prefix routing table,
 /// starting a completely fresh expression evaluation.
-#[derive(Debug, Clone, Copy)] // Added for ZST ergonomics
+#[derive(Debug, Clone, Copy)]
 pub struct Seed<P: VprattCore> {
     _marker: PhantomData<P>,
 }
@@ -193,6 +213,7 @@ impl<P: VprattCore> Seed<P> {
 ///
 /// This token safely encapsulates the required Left Binding Power (LBP) context. When you call `.parse()`,
 /// the engine guarantees it will only consume tokens that bind tighter than the operator that spawned this `Rhs`.
+#[derive(Debug, Clone, Copy)]
 pub struct Rhs<P: VprattCore> {
     pub rbp: Precedence,
     pub _marker: PhantomData<P>
@@ -213,6 +234,7 @@ impl<P: VprattCore> Rhs<P> {
 ///
 /// Useful for situations where you want to start a completely fresh parsing sequence
 /// from the current position in the token stream, ignoring any previous binding powers.
+#[derive(Debug, Clone, Copy)]
 pub struct Subexpr<P: VprattCore> {
     pub _marker: PhantomData<P>
 }
@@ -233,6 +255,7 @@ impl<P: VprattCore> Subexpr<P> {
 /// This is the primitive that enables native juxtaposition (e.g., implicit multiplication like `2x`).
 /// It allows an operator to partially parse a right-hand node, let trailing operators (like `^2`) bind to it,
 /// and *then* collapse the implicit multiplication.
+#[derive(Debug, Clone, Copy)]
 pub struct Resume<P: VprattCore> {
     pub rbp: Precedence,
     pub _marker: PhantomData<P>
@@ -253,6 +276,7 @@ impl<P: VprattCore> Resume<P> {
 ///
 /// This token temporarily drops precedence to 0 to parse the interior of the bounds,
 /// and then mathematically verifies that the next token in the stream matches the `expected_close` delimiter.
+#[derive(Debug, Clone, Copy)]
 pub struct Enclosed<P: VprattCore> {
     pub expected_close: P::PrattToken,
 }
@@ -283,6 +307,7 @@ impl<P: VprattCore> Enclosed<P> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Expect<P: VprattCore>{
     pub expected: P::PrattToken,
 }
@@ -304,6 +329,8 @@ impl<P: VprattCore> Expect<P>  {
 }
 }
 
+
+#[derive(Debug, Clone, Copy)]
 pub struct Accept<P: VprattCore>{
     pub target: P::PrattToken
 }
@@ -367,7 +394,7 @@ impl<P: VprattCore> Table<P> {
     pub const fn structural(
         self,
         _token: P::PrattToken,
-        _handler: fn(&mut P, Consumed<P::Item>, Subexpr<P>) -> Result<P>
+        _handler: fn(&mut P, Consumed<P::Item>, Atom<P>, Subexpr<P>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a standard binary infix operator (e.g., `+`, `-`, `*`, `/`, `^`).
