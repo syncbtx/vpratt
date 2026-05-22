@@ -58,6 +58,16 @@ fn scrape_chain(expr: &Expr, entries: &mut Vec<Entry>) -> syn::Result<()> {
                         span,
                     });
                 }
+
+                "structural" => {
+                    require_args(args, 3, "prefix")?;
+                    entries.push(Entry::Structural {
+                        token: args[0].clone(),
+                        handler: args[1].clone(),
+                        span,
+                    });
+                }
+
                 "prefix" => {
                     require_args(args, 3, "prefix")?;
                     entries.push(Entry::Prefix {
