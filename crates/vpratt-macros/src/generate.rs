@@ -201,6 +201,7 @@ pub fn generate_core(
                         self,
                         __lhs__,
                         ::vpratt::Consumed::__new__(__token__),
+                        ::vpratt::Seed::__new__(),
                         ::vpratt::Resume::__new__(#rbp),
                     ),
                 });

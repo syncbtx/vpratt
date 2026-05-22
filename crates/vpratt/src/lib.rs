@@ -171,6 +171,24 @@ impl<T> Consumed<T> {
     pub fn __new__(token: T) -> Self { Self { token } }
 }
 
+/// A capability token that delegates a consumed token back to the prefix routing table,
+/// starting a completely fresh expression evaluation.
+#[derive(Debug, Clone, Copy)] // Added for ZST ergonomics
+pub struct Seed<P: VprattCore> {
+    _marker: PhantomData<P>,
+}
+
+impl<P: VprattCore> Seed<P> {
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn __new__() -> Self { Self { _marker: PhantomData } }
+
+    #[inline(always)]
+    pub fn parse(&self, p: &mut P, token: P::Item) -> Result<P> {
+        p.__nud__(token)
+    }
+}
+
 /// A capability token allowing a handler to request the parsing of the right-hand side of an expression.
 ///
 /// This token safely encapsulates the required Left Binding Power (LBP) context. When you call `.parse()`,
@@ -384,6 +402,6 @@ impl<P: VprattCore> Table<P> {
         _bp: Precedence,
         _assoc: Associativity,
         _token: P::PrattToken,
-        _handler: fn(&mut P, P::Output, Consumed<P::Item>, Resume<P>) -> Result<P>
+        _handler: fn(&mut P, P::Output, Consumed<P::Item>, Seed<P>, Resume<P>) -> Result<P>
     ) -> Self { self }
 }

@@ -1,6 +1,6 @@
 use core::iter::Peekable;
 use core::ops::Range;
-use vpratt::{Consumed, Rhs, Enclosed, Resume, Associativity::{Left, Right}};
+use vpratt::{Consumed, Rhs, Enclosed, Resume, Associativity::{Left, Right}, VprattCore, Seed};
 use logos::Logos;
 use TokenKind::*;
 
@@ -132,6 +132,7 @@ impl<I: Iterator<Item = Token>> MathParser<I> {
         .infix(50, Left, Slash, Self::div)
 
         .juxt(60, LParen, RParen, Self::implicit_mul)
+        .implied(60, Left, Num, Self::implied_mul)
         .implied(60, Left, Ident, Self::implied_mul)
 
         .prefix(70, Minus, Self::negate)
@@ -198,10 +199,11 @@ impl<I: Iterator<Item = Token>> MathParser<I> {
     fn implied_mul(
         &mut self,
         lhs: Expr,
-        token: Consumed<Token>,
+        c: Consumed<Token>,
+        seed: Seed<Self>,
         resume: Resume<Self>
     ) -> vpratt::Result<Self>{
-        let right_start = Expr::Var(token.token.lexeme);
+        let right_start = seed.parse(self, c.token)?;
 
         let right_full = resume.parse(self, right_start)?;
 
