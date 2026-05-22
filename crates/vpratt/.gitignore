@@ -5,6 +5,7 @@ Cargo.lock
 
 # === JetBrains RustRover / IntelliJ ===
 .idea/
+.history/
 *.iml
 *.iws
 
