@@ -1,6 +1,6 @@
 use core::iter::Peekable;
 use core::ops::Range;
-use vpratt::{Consumed, Rhs, Enclosed, Resume, Associativity::{Left, Right}, VprattCore, Seed};
+use vpratt::{Associativity::{Left, Right}, TerminalCtx, GroupCtx, PrefixCtx, InfixCtx, PostfixCtx, ImpliedCtx, JuxtCtx};
 use logos::Logos;
 use TokenKind::*;
 
@@ -141,86 +141,72 @@ impl<I: Iterator<Item = Token>> MathParser<I> {
 
 
     #[vpratt::handler]
-    fn num(&mut self, token: Consumed<Token>) -> vpratt::Result<Self>{
-        let val = token.token.lexeme.parse::<f64>().map_err(|_| MathError {
+    fn num(&mut self, ctx: TerminalCtx<Self>) -> vpratt::Result<Self>{
+        let val = ctx.consumed.token.lexeme.parse::<f64>().map_err(|_| MathError {
             message: "Invalid float".into(),
-            span: token.token.span,
+            span: ctx.consumed.token.span,
         })?;
         Ok(Expr::Num(val))
     }
 
     #[vpratt::handler]
-    fn var(&mut self, token: Consumed<Token>) -> vpratt::Result<Self>{
-        Ok(Expr::Var(token.token.lexeme))
+    fn var(&mut self, ctx: TerminalCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Var(ctx.consumed.token.lexeme))
     }
 
     #[vpratt::handler]
-    fn group(&mut self, open: Consumed<Token>, enclosed: Enclosed<Self>) -> vpratt::Result<Self>{
-        let (inner, close) = enclosed.parse(self)?;
-        Ok(Expr::Group(Box::new(inner), open.token.span.start .. close.span.end))
+    fn group(&mut self, ctx: GroupCtx<Self>) -> vpratt::Result<Self>{
+        let (inner, close) = ctx.enclosed.parse(self)?;
+        Ok(Expr::Group(Box::new(inner), ctx.consumed.token.span.start .. close.span.end))
     }
 
     #[vpratt::handler]
-    fn negate(&mut self, _op: Consumed<Token>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
-        Ok(Expr::Neg(Box::new(rhs.parse(self)?)))
+    fn negate(&mut self, ctx: PrefixCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Neg(Box::new(ctx.rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn power(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
-        Ok(Expr::Pow(Box::new(lhs), Box::new(rhs.parse(self)?)))
+    fn power(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Pow(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn mul(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
-        Ok(Expr::Mul(Box::new(lhs), Box::new(rhs.parse(self)?)))
+    fn mul(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Mul(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn div(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
-        Ok(Expr::Div(Box::new(lhs), Box::new(rhs.parse(self)?)))
+    fn div(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Div(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn add(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
-        Ok(Expr::Add(Box::new(lhs), Box::new(rhs.parse(self)?)))
+    fn add(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Add(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn sub(&mut self, lhs: Expr, _op: Consumed<Token>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
-        Ok(Expr::Sub(Box::new(lhs), Box::new(rhs.parse(self)?)))
+    fn sub(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Sub(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn factorial(&mut self, lhs: Expr, _op: Consumed<Token>) -> vpratt::Result<Self>{
-        Ok(Expr::Fact(Box::new(lhs)))
+    fn factorial(&mut self, ctx: PostfixCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Fact(Box::new(ctx.lhs)))
     }
 
     #[vpratt::handler]
-    fn implied_mul(
-        &mut self,
-        lhs: Expr,
-        c: Consumed<Token>,
-        seed: Seed<Self>,
-        resume: Resume<Self>
-    ) -> vpratt::Result<Self>{
-        let right_start = seed.parse(self, c.token)?;
-
-        let right_full = resume.parse(self, right_start)?;
-
-        Ok(Expr::Mul(Box::new(lhs), Box::new(right_full)))
+    fn implied_mul(&mut self, ctx: ImpliedCtx<Self>) -> vpratt::Result<Self>{
+        let seeded = ctx.seed.parse(self, ctx.consumed.token)?;
+        let full = ctx.resume.parse(self, seeded)?;
+        Ok(Expr::Mul(Box::new(ctx.lhs), Box::new(full)))
     }
 
     #[vpratt::handler]
-    fn implicit_mul(
-        &mut self,
-        lhs: Expr,
-        _: Consumed<Token>,
-        enclosed: Enclosed<Self>,
-        resume: Resume<Self>
-    ) -> vpratt::Result<Self>{
-        let (inner, _) = enclosed.parse(self)?;
-        let node = Expr::Mul(Box::new(lhs), Box::new(inner));
-        resume.parse(self, node)
+    fn implicit_mul(&mut self, ctx: JuxtCtx<Self>) -> vpratt::Result<Self>{
+        let (inner, _) = ctx.enclosed.parse(self)?;
+        let node = Expr::Mul(Box::new(ctx.lhs), Box::new(inner));
+        ctx.resume.parse(self, node)
     }
 }
 

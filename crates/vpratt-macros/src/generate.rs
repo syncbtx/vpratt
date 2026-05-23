@@ -122,7 +122,13 @@ pub fn generate_core(
             Entry::Terminal { token, handler, .. } => {
                 let pat = to_pattern(token)?;
                 nud_arms.push(quote! {
-                    #pat => #handler(self, ::vpratt::Consumed::__new__(__token__)),
+                    #pat => #handler(
+                        self,
+                        ::vpratt::TerminalCtx{
+                            consumed: ::vpratt::Consumed::__new__(__token__),
+                            _marker: ::core::marker::PhantomData,
+                        }
+                    ),
                 });
             }
 
@@ -131,8 +137,11 @@ pub fn generate_core(
                 nud_arms.push(quote! {
                     #open_pat => #handler(
                         self,
-                        ::vpratt::Consumed::__new__(__token__),
-                        ::vpratt::Enclosed::__new__(#close),
+                        ::vpratt::GroupCtx{
+                            consumed: ::vpratt::Consumed::__new__(__token__),
+                            enclosed: ::vpratt::Enclosed::__new__(#close),
+                            _marker: ::core::marker::PhantomData,
+                        }
                     ),
                 });
             }
@@ -142,9 +151,12 @@ pub fn generate_core(
                 nud_arms.push(quote! {
                     #pat => #handler(
                         self,
-                        ::vpratt::Consumed::__new__(__token__),
-                        ::vpratt::Atom::__new__(),
-                        ::vpratt::Subexpr::__new__(),
+                        ::vpratt::StructuralCtx{
+                            consumed: ::vpratt::Consumed::__new__(__token__),
+                            atom: ::vpratt::Atom::__new__(),
+                            sub: ::vpratt::Subexpr::__new__(),
+                            _marker: ::core::marker::PhantomData,
+                        }
                     ),
                 });
             }
@@ -154,8 +166,11 @@ pub fn generate_core(
                 nud_arms.push(quote! {
                     #pat => #handler(
                         self,
-                        ::vpratt::Consumed::__new__(__token__),
-                        ::vpratt::Rhs::__new__(#bp),
+                        ::vpratt::PrefixCtx{
+                            consumed: ::vpratt::Consumed::__new__(__token__),
+                            rhs: ::vpratt::Rhs::__new__(#bp),
+                            _marker: ::core::marker::PhantomData,
+                        }
                     ),
                 });
             }
@@ -171,9 +186,12 @@ pub fn generate_core(
                 led_arms.push(quote! {
                     #pat => #handler(
                         self,
-                        __lhs__,
-                        ::vpratt::Consumed::__new__(__token__),
-                        ::vpratt::Rhs::__new__(#rbp),
+                        ::vpratt::InfixCtx{
+                            lhs: __lhs__,
+                            consumed: ::vpratt::Consumed::__new__(__token__),
+                            rhs: ::vpratt::Rhs::__new__(#rbp),
+                            _marker: ::core::marker::PhantomData,
+                        }
                     ),
                 });
             }
@@ -182,7 +200,14 @@ pub fn generate_core(
                 let pat = to_pattern(token)?;
                 lbp_arms.push(quote! { #pat => #bp, });
                 led_arms.push(quote! {
-                    #pat => #handler(self, __lhs__, ::vpratt::Consumed::__new__(__token__)),
+                    #pat => #handler(
+                        self,
+                        ::vpratt::PostfixCtx{
+                            lhs: __lhs__,
+                            consumed: ::vpratt::Consumed::__new__(__token__),
+                            _marker: ::core::marker::PhantomData,
+                        }
+                    ),
                 });
             }
 
@@ -192,10 +217,13 @@ pub fn generate_core(
                 led_arms.push(quote! {
                     #open_pat => #handler(
                         self,
-                        __lhs__,
-                        ::vpratt::Consumed::__new__(__token__),
-                        ::vpratt::Enclosed::__new__(#close),
-                        ::vpratt::Resume::__new__(#bp),
+                        ::vpratt::JuxtCtx{
+                            lhs: __lhs__,
+                            consumed: ::vpratt::Consumed::__new__(__token__),
+                            enclosed: ::vpratt::Enclosed::__new__(#close),
+                            resume: ::vpratt::Resume::__new__(#bp),
+                            _marker: ::core::marker::PhantomData,
+                        }
                     ),
                 });
             }
@@ -211,10 +239,13 @@ pub fn generate_core(
                 led_arms.push(quote! {
                     #pat => #handler(
                         self,
-                        __lhs__,
-                        ::vpratt::Consumed::__new__(__token__),
-                        ::vpratt::Seed::__new__(),
-                        ::vpratt::Resume::__new__(#rbp),
+                        ::vpratt::ImpliedCtx{
+                            lhs: __lhs__,
+                            consumed: ::vpratt::Consumed::__new__(__token__),
+                            seed: ::vpratt::Seed::__new__(),
+                            resume: ::vpratt::Resume::__new__(#rbp),
+                            _marker: ::core::marker::PhantomData,
+                        }
                     ),
                 });
             }

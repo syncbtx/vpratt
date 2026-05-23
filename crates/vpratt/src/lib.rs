@@ -20,9 +20,11 @@
 //!
 
 #![no_std]
+extern crate alloc;
 
 pub mod prelude;
 
+use alloc::vec::Vec;
 use core::marker::PhantomData;
 use core::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use core::error::Error as CoreError;
@@ -307,51 +309,6 @@ impl<P: VprattCore> Enclosed<P> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Expect<P: VprattCore>{
-    pub expected: P::PrattToken,
-}
-
-impl<P: VprattCore> Expect<P>  {
-    pub fn new(expected: P::PrattToken) -> Self { Self { expected }}
-    pub fn parse(&self, parser: &mut P) -> core::result::Result<P::Item, P::Error>{
-        let token = match parser.__next__(){
-            Some(t) => t,
-            None => return Err(P::__convert_error__(VprattError::UnexpectedEOF))
-        };
-
-        if self.expected == P::__extract__(&token){
-            Ok(token)
-        }
-        else{
-            Err(P::__convert_error__(VprattError::ExpectedTokenMismatch(self.expected, token)))
-        }
-}
-}
-
-
-#[derive(Debug, Clone, Copy)]
-pub struct Accept<P: VprattCore>{
-    pub target: P::PrattToken
-}
-
-impl<P: VprattCore> Accept<P>{
-    pub fn new(target: P::PrattToken) -> Self { Self{ target } }
-    pub fn parse(&self, parser: &mut P) -> core::result::Result<Option<P::Item>, P::Error>{
-         let is_match = match parser.__peek__(){
-            Some(t) => P::__extract__(t) == self.target,
-            None => false
-        };
-
-        if is_match{
-            Ok(Some(parser.__next__().unwrap()))
-        }
-        else{
-            Ok(None)
-        }
-
-    }
-}
 
 /// The compile-time routing map for the Pratt parser.
 ///
@@ -372,7 +329,7 @@ impl<P: VprattCore> Table<P> {
     pub const fn terminal(
         self,
         _token: P::PrattToken,
-        _handler: fn(&mut P, Consumed<P::Item>) -> Result<P>
+        _handler: fn(&mut P, TerminalCtx<P>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a token that opens an enclosed group (e.g., standard parentheses `(a + b)`).
@@ -380,7 +337,7 @@ impl<P: VprattCore> Table<P> {
         self,
         _open: P::PrattToken,
         _close: P::PrattToken,
-        _handler: fn(&mut P, Consumed<P::Item>, Enclosed<P>) -> Result<P>
+        _handler: fn(&mut P, GroupCtx<P>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a prefix operator (e.g., the unary minus in `-5` or logical NOT in `!true`).
@@ -388,13 +345,13 @@ impl<P: VprattCore> Table<P> {
         self,
         _bp: Precedence,
         _token: P::PrattToken,
-        _handler: fn(&mut P, Consumed<P::Item>, Rhs<P>) -> Result<P>
+        _handler: fn(&mut P, PrefixCtx<P>) -> Result<P>
     ) -> Self { self }
 
     pub const fn structural(
         self,
         _token: P::PrattToken,
-        _handler: fn(&mut P, Consumed<P::Item>, Atom<P>, Subexpr<P>) -> Result<P>
+        _handler: fn(&mut P, StructuralCtx<P>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a standard binary infix operator (e.g., `+`, `-`, `*`, `/`, `^`).
@@ -403,7 +360,7 @@ impl<P: VprattCore> Table<P> {
         _bp: Precedence,
         _assoc: Associativity,
         _token: P::PrattToken,
-        _handler: fn(&mut P, P::Output, Consumed<P::Item>, Rhs<P>) -> Result<P>
+        _handler: fn(&mut P,InfixCtx<P>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a postfix operator (e.g., the factorial symbol in `5!`).
@@ -411,7 +368,7 @@ impl<P: VprattCore> Table<P> {
         self,
         _bp: Precedence,
         _token: P::PrattToken,
-        _handler: fn(&mut P, P::Output, Consumed<P::Item>) -> Result<P>
+        _handler: fn(&mut P, PostfixCtx<P>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a grouped juxtaposition operation (e.g., implicit multiplication via parentheses like `2(a+b)`).
@@ -423,7 +380,7 @@ impl<P: VprattCore> Table<P> {
         _bp: Precedence,
         _open: P::PrattToken,
         _close: P::PrattToken,
-        _handler: fn(&mut P, P::Output, Consumed<P::Item>, Enclosed<P>, Resume<P>) -> Result<P>
+        _handler: fn(&mut P, JuxtCtx<P>) -> Result<P>
     ) -> Self { self }
 
     /// Maps a terminal juxtaposition operation (e.g., implicit multiplication via variables like `2x`).
@@ -435,6 +392,318 @@ impl<P: VprattCore> Table<P> {
         _bp: Precedence,
         _assoc: Associativity,
         _token: P::PrattToken,
-        _handler: fn(&mut P, P::Output, Consumed<P::Item>, Seed<P>, Resume<P>) -> Result<P>
+        _handler: fn(&mut P, ImpliedCtx<P>) -> Result<P>
     ) -> Self { self }
 }
+
+/// Context provided to handlers registered via `.terminal()`.
+///
+/// This context represents a standalone value that does not require further mathematical
+/// evaluation. It provides the consumed token but contains no capabilities for further
+/// parsing.
+///
+/// **When to use this:**
+/// For atomic values such as integers, floats, booleans, and standalone identifiers.
+pub struct TerminalCtx<'a, P: VprattCore> {
+    pub consumed: Consumed<P::Item>,
+    pub _marker:  PhantomData<&'a ()>,
+}
+
+/// Context provided to handlers registered via `.group()`.
+///
+/// This context represents an isolated expression wrapped in matching delimiters.
+/// It temporarily drops the engine's precedence to 0 to parse the interior, and
+/// guarantees the closing delimiter is found and consumed.
+///
+/// **When to use this:**
+/// For parentheses `(...)`, array declarations `[...]`, or any other balanced delimiters.
+pub struct GroupCtx<'a, P: VprattCore> {
+    pub consumed: Consumed<P::Item>,
+    pub enclosed: Enclosed<P>,
+    pub _marker:  PhantomData<&'a ()>,
+}
+
+/// Context provided to handlers registered via `.structural()`.
+///
+/// This context is the escape hatch from the math engine. It represents control-flow
+/// or structural keywords that break standard Pratt precedence loops.
+///
+/// It provides two specific capabilities:
+/// * `atom`: Fetches a single, isolated identifier or terminal without triggering math.
+/// * `sub`: Resets the engine's precedence to 0, evaluating a completely fresh block of code.
+///
+/// **When to use this:**
+/// For language constructs like `let`, `if`, `match`, or `while` statements.
+pub struct StructuralCtx<'a, P: VprattCore> {
+    pub consumed: Consumed<P::Item>,
+    pub atom:    Atom<P>,
+    pub sub:     Subexpr<P>,
+    pub _marker: PhantomData<&'a ()>,
+}
+
+/// Context provided to handlers registered via `.prefix()`.
+///
+/// This context represents an operator that precedes an expression. It provides the
+/// `Rhs` capability, which instructs the engine to evaluate the right-hand side
+/// of the expression using the operator's registered binding power.
+///
+/// **When to use this:**
+/// For unary math or logic operators like `-x`, `!y`, or `~z`.
+pub struct PrefixCtx<'a, P: VprattCore> {
+    pub consumed: Consumed<P::Item>,
+    pub rhs:      Rhs<P>,
+    pub _marker:  PhantomData<&'a ()>,
+}
+
+/// Context provided to handlers registered via `.infix()`.
+///
+/// This context represents a standard binary operator sitting between two expressions.
+/// It provides the already-parsed left-hand side (`lhs`) and the `Rhs` capability to
+/// evaluate the right-hand side using the operator's registered binding power.
+///
+/// **When to use this:**
+/// For standard binary operations like `+`, `-`, `*`, `/`, or assignment `<-`.
+pub struct InfixCtx<'a, P: VprattCore> {
+    pub lhs:      P::Output,
+    pub consumed: Consumed<P::Item>,
+    pub rhs:      Rhs<P>,
+    pub _marker:  PhantomData<&'a ()>,
+}
+
+/// Context provided to handlers registered via `.postfix()`.
+///
+/// This context represents a trailing operator. It provides the parsed left-hand
+/// side (`lhs`) and the consumed token. Because the expression ends here, it does
+/// not provide any capabilities to parse further.
+///
+/// **When to use this:**
+/// For trailing operations like factorial `x!`, increments `y++`, or unwraps `z?`.
+pub struct PostfixCtx<'a, P: VprattCore> {
+    pub  lhs:      P::Output,
+    pub consumed: Consumed<P::Item>,
+    pub _marker:  PhantomData<&'a ()>,
+}
+
+/// Context provided to handlers registered via `.juxt()`.
+///
+/// This context represents implicit juxtaposition involving an enclosed group.
+/// It provides the `Enclosed` capability to safely parse the interior of the group,
+/// and the `Resume` capability to manually reinject the resulting AST node back
+/// into the left-binding-power loop.
+///
+/// **When to use this:**
+/// For implicit multiplication using parentheses, e.g., `2(a + b)`.
+pub struct JuxtCtx<'a, P: VprattCore> {
+    pub lhs:      P::Output,
+    pub consumed: Consumed<P::Item>,
+    pub enclosed: Enclosed<P>,
+    pub resume:   Resume<P>,
+    pub _marker:  PhantomData<&'a ()>,
+}
+
+/// Context provided to handlers registered via `.implied()`.
+///
+/// This context represents pure, token-driven implicit juxtaposition.
+/// It provides the `Seed` capability, which forcefully feeds the consumed token
+/// back into the prefix router as the start of a new expression, and the `Resume`
+/// capability to reinject the combined result back into the infix loop.
+///
+/// **When to use this:**
+/// For ML-style curried function application (e.g., `f x y`) or variable-based
+/// implicit multiplication (e.g., `2x`).
+pub struct ImpliedCtx<'a, P: VprattCore> {
+    pub lhs:      P::Output,
+    pub consumed: Consumed<P::Item>,
+    pub seed:     Seed<P>,
+    pub resume:   Resume<P>,
+    pub _marker:  PhantomData<&'a ()>,
+}
+
+
+/// Utility methods available on all vpratt context objects.
+///
+/// These extend vpratt's correctness guarantees into structural parsing —
+/// the parts of a grammar that aren't precedence-driven but still need
+/// safe, well-typed stream navigation.
+///
+/// All methods take `&self` and `p: &mut P` explicitly. The context object
+/// is the access point; all stream mutation goes through `p`.
+///
+/// # Usage
+///
+/// ```rust
+/// ctx.expect(self, Then?;
+/// ctx.accept(self, Recursive?;
+/// ctx.series(self, Equals?;
+/// ctx.separated(self, Comma, RParen?;
+/// ```
+pub trait CtxUtils<P: VprattCore> {
+    /// Consume the next token if it matches `expected`, otherwise return a
+    /// typed error.
+    ///
+    /// Equivalent to "the next token must be X". Surfaces
+    /// `VprattError::ExpectedTokenMismatch` if the token doesn't match,
+    /// and `VprattError::UnexpectedEOF` if the stream is exhausted.
+    fn expect(
+        &self,
+        p: &mut P,
+        expected: P::PrattToken,
+    ) -> core::result::Result<Consumed<P::Item>, P::Error> {
+        match p.__peek__() {
+            None => Err(P::__convert_error__(VprattError::UnexpectedEOF)),
+            Some(item) => {
+                let extracted = P::__extract__(item);
+                if extracted == expected {
+                    let token = p.__next__().unwrap();
+                    Ok(Consumed::__new__(token))
+                } else {
+                    // Consume the token so the error carries it.
+                    let actual = p.__next__().unwrap();
+                    Err(P::__convert_error__(VprattError::ExpectedTokenMismatch(
+                        expected,
+                        actual,
+                    )))
+                }
+            }
+        }
+    }
+
+    /// Consume the next token if it matches `expected`, otherwise leave the
+    /// stream untouched and return `None`.
+    ///
+    /// Equivalent to "optionally consume X". Never fails — the `Result`
+    /// wrapper exists solely to allow `?` propagation of any internal
+    /// stream errors.
+    fn accept(
+        &self,
+        p: &mut P,
+        expected: P::PrattToken,
+    ) -> core::result::Result<Option<Consumed<P::Item>>, P::Error> {
+        match p.__peek__() {
+            Some(item) if P::__extract__(item) == expected => {
+                let token = p.__next__().unwrap();
+                Ok(Some(Consumed::__new__(token)))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Consume a sequence of tokens matching `of` until `delimiter` is seen.
+    ///
+    /// The delimiter is **not** consumed — it is left in the stream for the
+    /// caller to handle. Returns an empty `Vec` if the first token is already
+    /// the delimiter or a non-matching token.
+    ///
+    /// # Example
+    ///
+    /// Parsing `f x y z =` where `=` is the delimiter:
+    /// ```rust
+    /// // stream: [Ident("x"), Ident("y"), Ident("z"), Equals, ...]
+    /// let args = ctx.series(self, Ident(""), Equals)?;
+    /// // args: [Consumed(x), Consumed(y), Consumed(z)]
+    /// // stream: [Equals, ...]
+    /// ```
+    fn series(
+        &self,
+        p: &mut P,
+        of: P::PrattToken,
+        delimiter: P::PrattToken,
+    ) -> core::result::Result<Vec<Consumed<P::Item>>, P::Error> {
+        let mut items = Vec::new();
+        loop {
+            match p.__peek__() {
+                // Delimiter reached — stop, leave it in the stream.
+                Some(item) if P::__extract__(item) == delimiter => break,
+                // EOF — stop, caller decides if this is an error.
+                None => break,
+                // Matching token — consume it.
+                Some(item) if P::__extract__(item) == of => {
+                    let token = p.__next__().unwrap();
+                    items.push(Consumed::__new__(token));
+                }
+                // Non-matching, non-delimiter token — stop.
+                _ => break,
+            }
+        }
+        Ok(items)
+    }
+
+    /// Consume tokens matching `of`, separated by `sep`, until `end` is seen.
+    ///
+    /// The `end` delimiter **is** consumed. Leading and trailing separators
+    /// are not accepted — the structure must be `of (sep of)* end`.
+    /// Returns `VprattError::UnexpectedEOF` if the stream is exhausted before
+    /// `end` is seen.
+    ///
+    /// # Example
+    ///
+    /// Parsing `(x, y, z)` after `(` has been consumed:
+    /// ```rust
+    /// // stream: [Ident("x"), Comma, Ident("y"), Comma, Ident("z"), RParen, ...]
+    /// let idents = ctx.separated(self, Ident(""), Comma, RParen)?;
+    /// // idents: [Consumed(x), Consumed(y), Consumed(z)]
+    /// // stream: [...]  (RParen consumed)
+    /// ```
+    fn separated(
+        &self,
+        p: &mut P,
+        of: P::PrattToken,
+        sep: P::PrattToken,
+        end: P::PrattToken,
+    ) -> core::result::Result<Vec<Consumed<P::Item>>, P::Error> {
+        let mut items = Vec::new();
+
+        loop {
+            match p.__peek__() {
+                // End delimiter reached — consume it and stop.
+                Some(item) if P::__extract__(item) == end => {
+                    p.__next__();
+                    break;
+                }
+                // EOF before end delimiter — structural error.
+                None => {
+                    return Err(P::__convert_error__(VprattError::UnexpectedEOF));
+                }
+                // Expected token — consume it.
+                Some(item) if P::__extract__(item) == of => {
+                    let token = p.__next__().unwrap();
+                    items.push(Consumed::__new__(token));
+                }
+                // Anything else after we have at least one item is an error.
+                _ => {
+                    let actual = p.__next__().unwrap();
+                    return Err(P::__convert_error__(VprattError::UnexpectedToken(actual)));
+                }
+            }
+
+            // After each item, expect either a separator or the end delimiter.
+            match p.__peek__() {
+                Some(item) if P::__extract__(item) == sep => {
+                    p.__next__(); // consume separator, continue
+                }
+                Some(item) if P::__extract__(item) == end => {
+                    p.__next__(); // consume end delimiter, stop
+                    break;
+                }
+                None => {
+                    return Err(P::__convert_error__(VprattError::UnexpectedEOF));
+                }
+                _ => {
+                    let actual = p.__next__().unwrap();
+                    return Err(P::__convert_error__(VprattError::UnexpectedToken(actual)));
+                }
+            }
+        }
+
+        Ok(items)
+    }
+}
+
+impl<'a, P: VprattCore> CtxUtils<P> for crate::TerminalCtx<'a, P> {}
+impl<'a, P: VprattCore> CtxUtils<P> for crate::GroupCtx<'a, P> {}
+impl<'a, P: VprattCore> CtxUtils<P> for crate::StructuralCtx<'a, P> {}
+impl<'a, P: VprattCore> CtxUtils<P> for crate::PrefixCtx<'a, P> {}
+impl<'a, P: VprattCore> CtxUtils<P> for crate::InfixCtx<'a, P> {}
+impl<'a, P: VprattCore> CtxUtils<P> for crate::PostfixCtx<'a, P> {}
+impl<'a, P: VprattCore> CtxUtils<P> for crate::ImpliedCtx<'a, P> {}
+impl<'a, P: VprattCore> CtxUtils<P> for crate::JuxtCtx<'a, P> {}

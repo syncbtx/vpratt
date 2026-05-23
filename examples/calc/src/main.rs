@@ -1,4 +1,4 @@
-use vpratt::{Consumed, Rhs, Table, Associativity::Left};
+use vpratt::{Consumed, Rhs, Table, Associativity::Left, TerminalCtx, InfixCtx, PrefixCtx};
 use TokenKind::*;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -25,28 +25,28 @@ impl<I: Iterator<Item = TokenKind>> Calc<I>{
         .prefix(30, Minus, Self::negate);
 
     #[vpratt::handler]
-    fn num(&mut self, c: Consumed<TokenKind>) -> vpratt::Result<Self>{
-        match c.token{ Num(val) => Ok(Expr::Num(val)), _ => unreachable!() }
+    fn num(&mut self, ctx: TerminalCtx<Self>) -> vpratt::Result<Self>{
+        match ctx.consumed.token{ Num(val) => Ok(Expr::Num(val)), _ => unreachable!() }
     }
 
     #[vpratt::handler]
-    fn add(&mut self, lhs: Expr, _op: Consumed<TokenKind>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
-        Ok(Expr::Add(Box::new(lhs), Box::new(rhs.parse(self)?)))
+    fn add(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Add(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn sub(&mut self, lhs: Expr, _op: Consumed<TokenKind>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
-        Ok(Expr::Sub(Box::new(lhs), Box::new(rhs.parse(self)?)))
+    fn sub(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Sub(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn negate(&mut self, _op: Consumed<TokenKind>, rhs: Rhs<Self>) -> vpratt::Result<Self>{
-        Ok(Expr::Neg(Box::new(rhs.parse(self)?)))
+    fn negate(&mut self, ctx: PrefixCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Neg(Box::new(ctx.rhs.parse(self)?)))
     }
 }
 
 fn main() {
-    // let src = "2 + -3 - 4 + 5";
+    // input = "2 + -3 - 4 + 5";
     let tokens = vec![Num(2.0), Plus, Minus, Num(3.0), Minus, Num(4.0), Plus, Num(5.0) ];
     let mut calc = Calc::new(tokens.into_iter());
     let ast = calc.pratt_parse();
