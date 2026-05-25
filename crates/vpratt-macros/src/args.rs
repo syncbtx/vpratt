@@ -9,7 +9,7 @@ pub struct ParserConfig {
     pub error: Option<Type>,
     pub extract: Option<Expr>,
     pub entry: Option<Ident>,
-    pub table: Option<Expr>,
+    pub _table: Option<Expr>,
 }
 
 impl Parse for ParserConfig {
@@ -21,7 +21,7 @@ impl Parse for ParserConfig {
         let mut error = None;
         let mut extract = None;
         let mut entry = None;
-        let mut table = None;
+        let mut _table = None;
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
@@ -37,7 +37,7 @@ impl Parse for ParserConfig {
 
                 "stream"  => stream = Some(input.parse::<Expr>()?),
                 "extract" => extract = Some(input.parse::<Expr>()?),
-                "table"   => table = Some(input.parse::<Expr>()?),
+                "table"   => _table = Some(input.parse::<Expr>()?),
 
                 "entry"  => entry = Some(input.parse::<Ident>()?),
 
@@ -60,7 +60,7 @@ impl Parse for ParserConfig {
             error,
             extract,
             entry,
-            table,
+            _table,
         })
     }
 }

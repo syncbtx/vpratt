@@ -1,4 +1,4 @@
-use vpratt::{Consumed, Rhs, Table, Associativity::Left, TerminalCtx, InfixCtx, PrefixCtx};
+use vpratt::{Table, Associativity::Left, TerminalCtx, InfixCtx, PrefixCtx};
 use TokenKind::*;
 
 #[derive(Debug, Clone, Copy, PartialEq)]

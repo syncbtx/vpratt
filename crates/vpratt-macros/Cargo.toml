@@ -1,11 +1,12 @@
 [package]
 name = "vpratt-macros"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 authors = ["synkibe@gmail.com"]
 description = "Procedural macros for the vpratt pratt parsing framework."
 repository = "https://github.com/syncbtx/vpratt"
 license = "MIT"
+readme = "README.md"
 keywords = ["parser", "pratt", "macro", "compiler", "ast",]
 categories = ["development-tools::procedural-macro-helpers", "parsing"]
 
