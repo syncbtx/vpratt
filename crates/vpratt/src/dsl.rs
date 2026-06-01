@@ -69,6 +69,8 @@
 use core::marker::PhantomData;
 use crate::core::{Associativity, Precedence, VprattCore};
 
+
+#[derive(Debug, Clone, Copy)]
 pub struct Table<P> {
     _marker: PhantomData<P>,
 }

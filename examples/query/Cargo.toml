@@ -1,12 +1,11 @@
 [package]
-name = "math-lang"
+name = "query"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 logos = "0.16.0"
-vpratt = { path = "../../crates/vpratt", features = ["bp_u8"] }
+vpratt = {path = "../../crates/vpratt"}
 
 [lints]
 workspace = true
-

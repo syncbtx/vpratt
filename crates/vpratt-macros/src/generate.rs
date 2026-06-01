@@ -4,6 +4,7 @@ use syn::ItemImpl;
 use crate::args::ParserConfig;
 use crate::table::{Assoc, Entry, TableDef};
 
+
 /// Converts a token expression into a match pattern.
 ///
 /// Handles:
@@ -37,6 +38,46 @@ fn to_pattern(expr: &syn::Expr) -> syn::Result<TokenStream> {
     }
 }
 
+fn resolve_rbp(bp: &syn::Expr, assoc: &Assoc) ->  syn::Result<TokenStream> {
+    match assoc{
+        Assoc::Left => Ok(quote!{ #bp as ::vpratt::Precedence}),
+        Assoc::Right => {
+            if let syn::Expr::Lit(syn::ExprLit{ lit: syn::Lit::Int(int),..})= bp{
+                let val = int.base10_parse::<u16>()?;
+                if val == 0{
+                    return Err(
+                        syn::Error::new_spanned(
+                            bp,
+                            "vpratt: right-associative operators require a binding power of at least 1"
+                        )
+                    )
+                }
+                let rbp = val - 1;
+                Ok(quote! {#rbp as ::vpratt::Precedence})
+            }
+            else{
+                Err(syn::Error::new_spanned(
+                    bp,
+                    "vpratt: binding power must be an integer literal or a Precedence constant"
+                ))
+            }
+        }
+    }
+}
+
+fn expr_to_precedence(expr: &syn::Expr) -> syn::Result<TokenStream> {
+    match expr {
+        syn::Expr::Lit(syn::ExprLit{lit: syn::Lit::Int(int), ..}) => {
+            Ok(quote! { #int as ::vpratt::Precedence})
+        }
+        syn::Expr::Path(_) => Ok(quote! { #expr as ::vpratt::Precedence }),
+        _ => Err(syn::Error::new_spanned(
+            expr,
+            "vpratt: binding power must be an integer literal or a Precedence constant"
+        ))
+    }
+}
+
 pub fn generate_core(
     config: &ParserConfig,
     table: &TableDef,
@@ -44,6 +85,7 @@ pub fn generate_core(
 ) -> syn::Result<TokenStream> {
     let self_ty = &impl_block.self_ty;
     let (impl_generics, _, where_clause) = impl_block.generics.split_for_impl();
+   
 
     // ── Required arguments
 
@@ -63,13 +105,38 @@ pub fn generate_core(
         )
     })?;
 
-    let token_ty = config.token.as_ref().ok_or_else(|| {
-        syn::Error::new_spanned(
+    let where_clause = if config.token.is_none() && config.extract.is_none() {
+        quote! {
+        where
+            #item_ty: ::vpratt::VprattToken,
+            #where_clause
+    }
+    } else {
+        quote! { #where_clause }
+    };
+
+    let (token_ty, extractor) = match (config.token.as_ref(), config.extract.as_ref()) {
+        (Some(token), Some(extract)) => (
+            quote! { #token },
+            quote! { #extract },
+        ),
+
+        (None, None) => (
+            quote! { <#item_ty as ::vpratt::VprattToken>::PrattToken },
+            quote! { <#item_ty as ::vpratt::VprattToken>::extract },
+        ),
+
+        (Some(_), None) => return Err(syn::Error::new_spanned(
             impl_block,
-            "vpratt: missing `token` argument in #[vpratt::parser].\n\
-             Add `token = YourTokenKind` to specify the routing token type.",
-        )
-    })?;
+            "vpratt: `token` requires `extract`.\n\
+         Provide both or use #[vpratt::token] on your token type and omit both.",
+        )),
+        (None, Some(_)) => return Err(syn::Error::new_spanned(
+            impl_block,
+            "vpratt: `extract` requires `token`.\n\
+         Provide both or use #[vpratt::token] on your token type and omit both.",
+        )),
+    };
 
 
     // Defaults to `pratt_parse` — users can call `self.pratt_parse()` without
@@ -79,17 +146,6 @@ pub fn generate_core(
         .as_ref()
         .map(|i| quote! { #i })
         .unwrap_or_else(|| quote! { pratt_parse });
-
-    // Default extractor clones the item. This assumes `Item: Clone` and that
-    // `Item` and `PrattToken` are the same type. If your stream item and routing
-    // token are different types you must provide an explicit `extract` argument.
-    let extractor = config
-        .extract
-        .as_ref()
-        .map(|e| quote! { #e })
-        .unwrap_or_else(|| {
-            quote! { |t: &#item_ty| t.clone() }
-        });
 
     let stream_expr = &config.stream;
 
@@ -163,6 +219,7 @@ pub fn generate_core(
             
             Entry::Prefix { bp, token, handler, .. } => {
                 let pat = to_pattern(token)?;
+                let bp = expr_to_precedence(bp)?;
                 nud_arms.push(quote! {
                     #pat => #handler(
                         self,
@@ -177,12 +234,9 @@ pub fn generate_core(
 
             Entry::Infix { bp, assoc, token, handler, .. } => {
                 let pat = to_pattern(token)?;
-                let rbp = if *assoc == Assoc::Left {
-                    quote! { #bp }
-                } else {
-                    quote! { #bp - 1 }
-                };
-                lbp_arms.push(quote! { #pat => #bp, });
+                let bp_ts = expr_to_precedence(bp)?;
+                let rbp = resolve_rbp(bp, assoc)?;
+                lbp_arms.push(quote! { #pat => #bp_ts, });
                 led_arms.push(quote! {
                     #pat => #handler(
                         self,
@@ -198,6 +252,7 @@ pub fn generate_core(
 
             Entry::Postfix { bp, token, handler, .. } => {
                 let pat = to_pattern(token)?;
+                let bp = expr_to_precedence(bp)?;
                 lbp_arms.push(quote! { #pat => #bp, });
                 led_arms.push(quote! {
                     #pat => #handler(
@@ -213,6 +268,7 @@ pub fn generate_core(
 
             Entry::Juxt { bp, open, close, handler, .. } => {
                 let open_pat = to_pattern(open)?;
+                let bp = expr_to_precedence(bp)?;
                 lbp_arms.push(quote! { #open_pat => #bp, });
                 led_arms.push(quote! {
                     #open_pat => #handler(
@@ -230,12 +286,9 @@ pub fn generate_core(
 
             Entry::Implied { bp, assoc, token, handler, .. } => {
                 let pat = to_pattern(token)?;
-                let rbp = if *assoc == Assoc::Left {
-                    quote! { #bp }
-                } else {
-                    quote! { #bp - 1 }
-                };
-                lbp_arms.push(quote! { #pat => #bp, });
+                let bp_ts = expr_to_precedence(bp)?;
+                let rbp = resolve_rbp(bp, assoc)?;
+                lbp_arms.push(quote! { #pat => #bp_ts, });
                 led_arms.push(quote! {
                     #pat => #handler(
                         self,
@@ -347,6 +400,7 @@ pub fn generate_core(
                     }
                 }
             }
+
         }
 
         impl #impl_generics #self_ty #where_clause {
@@ -359,6 +413,8 @@ pub fn generate_core(
             ) -> ::core::result::Result<#output_ty, #error_type> {
                 <Self as ::vpratt::VprattCore>::__pratt_parse_internal__(self, 0)
             }
+
+
         }
         
     })

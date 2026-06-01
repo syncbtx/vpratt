@@ -48,6 +48,7 @@ use alloc::vec::Vec;
 use crate::Consumed;
 use crate::core::VprattCore;
 use crate::error::VprattError;
+use core::mem::discriminant;
 
 /// Utility methods available on all vpratt context types.
 ///
@@ -75,7 +76,7 @@ pub trait CtxUtils<P: VprattCore> {
             None => Err(P::__convert_error__(VprattError::UnexpectedEOF)),
             Some(item) => {
                 let extracted = P::__extract__(item);
-                if extracted == expected {
+                if discriminant(&extracted) == discriminant(&expected) {
                     let token = p.__next__().unwrap();
                     Ok(Consumed::__new__(token))
                 } else {
@@ -107,7 +108,7 @@ pub trait CtxUtils<P: VprattCore> {
         expected: P::PrattToken,
     ) -> core::result::Result<Option<Consumed<P::Item>>, P::Error> {
         match p.__peek__() {
-            Some(item) if P::__extract__(item) == expected => {
+            Some(item) if discriminant(&P::__extract__(item)) == discriminant(&expected) => {
                 let token = p.__next__().unwrap();
                 Ok(Some(Consumed::__new__(token)))
             }
@@ -115,7 +116,7 @@ pub trait CtxUtils<P: VprattCore> {
         }
     }
 
-    /// Collect a sequence of tokens matching `of` until `delimiter` is seen.
+    /// Collect a sequence of atomic expressions of matching `of` until `delimiter` is seen.
     ///
     /// The delimiter is **not** consumed — it is left in the stream for the
     /// caller to handle. 
@@ -129,7 +130,7 @@ pub trait CtxUtils<P: VprattCore> {
     /// //
     /// // stream: [Ident("x"), Ident("y"), Ident("z"), Equals, ...]
     /// let args = ctx.series(self, Ident(""), Equals)?;
-    /// // args:   [Consumed(x), Consumed(y), Consumed(z)]
+    /// // args:   [Expr::Ident("x"), Expr::Ident::("y"), Expr::Ident("z")]
     /// // stream: [Equals, ...]
     /// ```
     fn series(
@@ -137,23 +138,27 @@ pub trait CtxUtils<P: VprattCore> {
         p: &mut P,
         of: P::PrattToken,
         delimiter: P::PrattToken,
-    ) -> core::result::Result<Vec<Consumed<P::Item>>, P::Error> {
+    ) -> core::result::Result<Vec<P::Output>, P::Error> {
         let mut items = Vec::new();
         loop {
             match p.__peek__() {
-                Some(item) if P::__extract__(item) == delimiter => break,
-                None => break,
-                Some(item) if P::__extract__(item) == of => {
+                Some(item) if discriminant(&P::__extract__(item)) == discriminant(&delimiter) => break,
+                None => return Err(P::__convert_error__(VprattError::UnexpectedEOF)),
+                Some(item) if discriminant(&P::__extract__(item)) == discriminant(&of) => {
                     let token = p.__next__().unwrap();
-                    items.push(Consumed::__new__(token));
+                    items.push(P::__nud__(p, token)?);
                 }
-                _ => break,
+                Some(_) => {
+                    // Fail fast: explicitly reject invalid tokens instead of silently breaking
+                    let actual = p.__next__().unwrap();
+                    return Err(P::__convert_error__(VprattError::UnexpectedToken(actual)));
+                }
             }
         }
         Ok(items)
     }
 
-    /// Collect tokens matching `of`, separated by `sep`, until `end` is consumed.
+    /// Collect atomic expressions of tokens matching `of`, separated by `sep`, until `end` is consumed.
     ///
     /// The `end` delimiter **is** consumed. 
     /// 
@@ -170,56 +175,157 @@ pub trait CtxUtils<P: VprattCore> {
     /// //
     /// // stream: [Ident("x"), Comma, Ident("y"), Comma, Ident("z"), RParen, ...]
     /// let idents = ctx.separated(self, Ident(""), Comma, RParen)?;
-    /// // idents: [Consumed(x), Consumed(y), Consumed(z)]
+    /// // idents: [Expr::Ident("x"), Expr::Ident("y"), Expr::Ident("z")]
     /// // stream: [...]  — RParen consumed
     /// ```
     fn separated(
         &self,
         p: &mut P,
         of: P::PrattToken,
-        sep: P::PrattToken,
+        separator: P::PrattToken,
         end: P::PrattToken,
-    ) -> core::result::Result<Vec<Consumed<P::Item>>, P::Error> {
+    ) -> core::result::Result<Vec<P::Output>, P::Error> {
         let mut items = Vec::new();
 
         loop {
+            // 1. Check for the end of the list (handles empty lists and trailing separators)
             match p.__peek__() {
-                Some(item) if P::__extract__(item) == end => {
+                Some(item) if discriminant(&P::__extract__(item)) == discriminant(&end) => {
                     p.__next__();
                     break;
                 }
-                None => {
-                    return Err(P::__convert_error__(VprattError::UnexpectedEOF));
-                }
-                Some(item) if P::__extract__(item) == of => {
-                    let token = p.__next__().unwrap();
-                    items.push(Consumed::__new__(token));
-                }
-                _ => {
-                    let actual = p.__next__().unwrap();
-                    return Err(P::__convert_error__(VprattError::UnexpectedToken(actual)));
-                }
+                None => return Err(P::__convert_error__(VprattError::UnexpectedEOF)),
+                _ => {} // Fall through to parse the item
             }
 
+            // 2. Parse the expected item
             match p.__peek__() {
-                Some(item) if P::__extract__(item) == sep => {
-                    p.__next__();
+                Some(item) if discriminant(&P::__extract__(item)) == discriminant(&of) => {
+                    let token = p.__next__().unwrap();
+                    items.push(P::__nud__(p, token)?);
                 }
-                Some(item) if P::__extract__(item) == end => {
-                    p.__next__();
-                    break;
-                }
-                None => {
-                    return Err(P::__convert_error__(VprattError::UnexpectedEOF));
-                }
-                _ => {
+                Some(_) => {
                     let actual = p.__next__().unwrap();
                     return Err(P::__convert_error__(VprattError::UnexpectedToken(actual)));
                 }
+                None => return Err(P::__convert_error__(VprattError::UnexpectedEOF)),
+            }
+
+            // 3. Expect a separator OR the end token
+            match p.__peek__() {
+                Some(item) if discriminant(&P::__extract__(item)) == discriminant(&separator) => {
+                    p.__next__();
+                }
+                Some(item) if discriminant(&P::__extract__(item)) == discriminant(&end) => {
+                    p.__next__();
+                    break;
+                }
+                Some(_) => {
+                    let actual = p.__next__().unwrap();
+                    return Err(P::__convert_error__(VprattError::UnexpectedToken(actual)));
+                }
+                None => return Err(P::__convert_error__(VprattError::UnexpectedEOF)),
             }
         }
 
         Ok(items)
+    }
+
+    /// Collect a sequence of sub-expressions until `delimiter` is seen.
+    ///
+    /// The delimiter is **not** consumed — it is left in the stream for the
+    /// caller to handle.
+    ///
+    /// Returns an empty `Vec` if the stream immediately contains the delimiter or a non-matching token.
+    ///
+    /// ## Constraints
+    /// - the `delimiter` must have a zero left binding power
+    /// - the `delimiter` must not be registered in any infix position, if not it will be consumed as part of the sub-expression.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// // Parsing Let Rec f x y z = ... after `Let`, `Rec` and Ident(`f`) have been consumed.
+    /// //
+    /// // stream: [Ident("x"),Ident("y"), Ident("z"), Equals, ...]
+    /// let args = ctx.series_sub(self, Equals)?;
+    /// // args:   [Expr::Ident("x"), Expr::Ident("y"),Expr::Ident("z"),]
+    /// // stream: [Equals,...]
+    /// ```
+    fn series_sub(
+        &self,
+        p: &mut P,
+        delimiter: P::PrattToken,
+    ) -> core::result::Result<Vec<P::Output>, P::Error> {
+        let mut expressions = Vec::new();
+        loop {
+            match p.__peek__() {
+                Some(item) if discriminant(&P::__extract__(item)) == discriminant(&delimiter) => break,
+                None => return Err(P::__convert_error__(VprattError::UnexpectedEOF)),
+                _ => {
+                    expressions.push(P::__pratt_parse_internal__(p, 0)?);
+                }
+            }
+        }
+        Ok(expressions)
+    }
+
+    /// Collect a sequence of sub-expressions separated by `separator` until `end` is seen.
+    ///
+    /// Returns an empty `Vec` if the stream immediately contains the delimiter or a non-matching token.
+    ///
+    /// ## Constraints
+    /// - the `separator` and `end`  must have a zero left binding power
+    /// - the `separator` and `end` must not be registered in any infix position, if not it will be consumed as part of the sub-expression.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// // Parsing a tuple: (a + 1, f x, b * 2) after `(` has been consumed.
+    /// //
+    /// // stream: [Ident("a"), Plus, Int(1), Comma, Ident("f"), Ident("x"), Comma, ...]
+    /// let tuple = ctx.separated_sub(self, Comma, RParen)?;
+    /// // tuple:   [Expr::Add(a, 1), Expr::Application(f, x), Expr::Mul(b, 2)]
+    /// // stream: [...]
+    /// ```
+    fn separated_sub(
+        &self,
+        p: &mut P,
+        separator: P::PrattToken,
+        end: P::PrattToken,
+    ) -> core::result::Result<Vec<P::Output>, P::Error> {
+        let mut expressions = Vec::new();
+        loop {
+            // 1. Check for the end of the list
+            match p.__peek__() {
+                Some(item) if discriminant(&P::__extract__(item)) == discriminant(&end) => {
+                    p.__next__();
+                    break;
+                }
+                None => return Err(P::__convert_error__(VprattError::UnexpectedEOF)),
+                _ => {}
+            }
+
+            // 2. Delegate to the Pratt parser
+            expressions.push(P::__pratt_parse_internal__(p, 0)?);
+
+            // 3. Expect a separator OR the end token
+            match p.__peek__() {
+                Some(item) if discriminant(&P::__extract__(item)) == discriminant(&separator) => {
+                    p.__next__();
+                }
+                Some(item) if discriminant(&P::__extract__(item)) == discriminant(&end) => {
+                    p.__next__();
+                    break;
+                }
+                Some(_) => {
+                    let actual = p.__next__().unwrap();
+                    return Err(P::__convert_error__(VprattError::UnexpectedToken(actual)));
+                }
+                None => return Err(P::__convert_error__(VprattError::UnexpectedEOF)),
+            }
+        }
+        Ok(expressions)
     }
 }
 
@@ -232,3 +338,5 @@ impl<'a, P: VprattCore> CtxUtils<P> for crate::context::InfixCtx<'a, P> {}
 impl<'a, P: VprattCore> CtxUtils<P> for crate::context::PostfixCtx<'a, P> {}
 impl<'a, P: VprattCore> CtxUtils<P> for crate::context::ImpliedCtx<'a, P> {}
 impl<'a, P: VprattCore> CtxUtils<P> for crate::context::JuxtCtx<'a, P> {}
+
+

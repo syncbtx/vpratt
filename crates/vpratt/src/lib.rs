@@ -78,15 +78,18 @@ pub mod core;
 pub mod error;
 pub mod dsl;
 pub mod context;
+pub mod token;
 
 #[doc(inline)] pub use vpratt_macros::parser;
 #[doc(inline)] pub use vpratt_macros::handler;
+#[doc(inline)] pub use vpratt_macros::vpratt_token as token;
 #[doc(inline)] pub use crate::capabilities::*;
 #[doc(inline)] pub use crate::core::*;
 #[doc(inline)] pub use crate::context::utils::CtxUtils;
 #[doc(inline)] pub use crate::context::{TerminalCtx, GroupCtx, StructuralCtx, PrefixCtx, InfixCtx,PostfixCtx, ImpliedCtx,JuxtCtx};
 #[doc(inline)] pub use crate::error::*;
 #[doc(inline)] pub use crate::dsl::*;
+#[doc(inline)] pub use crate::token::{VprattToken, Spanned};
 
 
 

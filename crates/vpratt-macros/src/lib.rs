@@ -5,6 +5,7 @@ mod scrape;
 mod table;
 mod validate;
 mod generate;
+mod token;
 
 #[proc_macro_attribute]
 pub fn parser(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -58,4 +59,11 @@ pub fn handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     input_fn.block = Box::new(syn::parse_quote!(#new_block));
     quote::quote!(#input_fn).into()
+}
+
+#[proc_macro_attribute]
+pub fn vpratt_token(args: TokenStream, input: TokenStream) -> TokenStream {
+    token::expand(args.into(), input.into())
+        .unwrap_or_else(|e| e.to_compile_error().into())
+        .into()
 }

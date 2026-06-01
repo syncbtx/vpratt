@@ -9,6 +9,7 @@ pub enum Assoc {
     Right,
 }
 
+
 pub struct TableDef {
     pub entries: Vec<Entry>,
 }

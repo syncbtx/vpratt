@@ -101,6 +101,7 @@ impl<P: VprattCore> Atom<P> {
 ///     Ok(Expr::Apply(Box::new(ctx.lhs), Box::new(full)))
 /// }
 /// ```
+#[derive(Debug, Clone, Copy)]
 pub struct Seed<P: VprattCore> {
     _marker: PhantomData<P>,
 }
@@ -211,7 +212,7 @@ impl<P: VprattCore> Subexpr<P> {
 /// fn application(&mut self, ctx: ImpliedCtx<Self>) -> vpratt::Result<Self> {
 ///     let token = ctx.consumed.token;
 ///     let arg   = ctx.seed.parse(self, token)?;
-///     let full  = ctx.resume.parse(self, arg)?; // re-enter infix with arg as LHS
+///     let full  = ctx.resume.parse(self, arg)?; 
 ///     Ok(Expr::Apply(Box::new(ctx.lhs), Box::new(full)))
 /// }
 /// ```

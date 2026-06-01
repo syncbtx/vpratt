@@ -23,10 +23,18 @@ use crate::error::VprattError;
 /// 90+     postfix, field access, array indexing
 /// ```
 ///
+/// The default Precedence uses u16.
+/// With the bp_u8 feature `features = ["bp_u8"]` you can opt to use u8 instead
+/// It is recommended you use factors of 10 for you Precedence to avoid collisions: '10, 20, 100, 110`
+///
 /// Precedence numbers live in exactly one place: the [`Table`](crate::dsl::Table)
 /// declaration.
 ///
 /// When there is a precedence bug, the table is the only place to look.
+
+#[cfg(feature = "bp_u8")]
+pub type Precedence = u8;
+#[cfg(not(feature = "bp_u8"))]
 pub type Precedence = u16;
 
 /// Convenience result type alias for handler return types.
@@ -47,6 +55,7 @@ pub type Precedence = u16;
 ///     Ok(Expr::Add(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
 /// }
 /// ```
+
 pub type Result<P> = core::result::Result<
     <P as VprattCore>::Output,
     <P as VprattCore>::Error,
@@ -175,7 +184,7 @@ pub trait VprattCore {
 ///     .infix(50, Left,  Plus,  Self::add)   // (a + b) + c
 ///     .infix(60, Right, Caret, Self::power) // a ^ (b ^ c)
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Associativity {
     /// Left-associative: `a - b - c` parses as `(a - b) - c`.
     Left,

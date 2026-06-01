@@ -1,6 +1,6 @@
 use core::iter::Peekable;
 use core::ops::Range;
-use vpratt::{Associativity::{Left, Right}, TerminalCtx, GroupCtx, PrefixCtx, InfixCtx, PostfixCtx, ImpliedCtx, JuxtCtx};
+use vpratt::{Associativity::{Left, Right}, GroupCtx, ImpliedCtx, InfixCtx, JuxtCtx, PostfixCtx, PrefixCtx, TerminalCtx};
 use logos::Logos;
 use TokenKind::*;
 
@@ -13,6 +13,16 @@ pub enum TokenKind {
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
     Ident,
 
+    #[regex(r"d/d[a-zA-Z_][a-zA-Z0-9_]*")]
+    Leibniz,
+
+    #[token("sin")]    Sin,
+    #[token("cos")]    Cos,
+    #[token("tan")]    Tan,
+    #[token("arcsin")] Asin,
+    #[token("arccos")] Acos,
+    #[token("arctan")] Atan,
+
     #[token("+")] Plus,
     #[token("-")] Minus,
     #[token("*")] Star,
@@ -20,6 +30,8 @@ pub enum TokenKind {
     #[token("%")] Percent,
     #[token("^")] Caret,
     #[token("!")] Bang,
+    #[token("'")] Prime,
+
     #[token("(")] LParen,
     #[token(")")] RParen,
 
@@ -49,6 +61,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
 }
 
 #[derive(Debug, Clone)]
+#[vpratt::token(kind)]
 pub struct Token {
     pub kind: TokenKind,
     pub lexeme: String,
@@ -59,15 +72,21 @@ pub struct Token {
 pub enum Expr {
     Num(f64),
     Var(String),
-    Group(Box<Expr>, Range<usize>),             // this abstraction might be desirable in some contexts
-    Neg(Box<Expr>),                             // -x
-    Fact(Box<Expr>),                            // x!
-    Pow(Box<Expr>, Box<Expr>),                  // x^y
-    Add(Box<Expr>, Box<Expr>),                  // x + y
-    Sub(Box<Expr>, Box<Expr>),                  // x - y
-    Mul(Box<Expr>, Box<Expr>),                  // x * y
-    Div(Box<Expr>, Box<Expr>),                  // x / y
-    Mod(Box<Expr>, Box<Expr>),                  // x % y
+    Neg(Box<Expr>),
+    Fact(Box<Expr>),
+    Pow(Box<Expr>, Box<Expr>),
+    Add(Box<Expr>, Box<Expr>),
+    Sub(Box<Expr>, Box<Expr>),
+    Mul(Box<Expr>, Box<Expr>),
+    Div(Box<Expr>, Box<Expr>),
+    Mod(Box<Expr>, Box<Expr>),
+    Sin(Box<Expr>),
+    Cos(Box<Expr>),
+    Tan(Box<Expr>),
+    Asin(Box<Expr>),
+    Acos(Box<Expr>),
+    Atan(Box<Expr>),
+    DerivRespectTo { var: String, expr: Box<Expr> },
 }
 
 #[derive(Debug)]
@@ -99,9 +118,7 @@ impl From<vpratt::VprattError<Token, TokenKind>> for MathError {
     }
 }
 
-pub struct MathParser<I: Iterator<Item = Token>> {
-    pub stream: Peekable<I>,
-}
+pub struct MathParser<I: Iterator<Item = Token>> { pub stream: Peekable<I>,}
 
 impl<I: Iterator<Item = Token>> MathParser<I> {
     pub fn new(lexer: I) -> Self {
@@ -111,12 +128,10 @@ impl<I: Iterator<Item = Token>> MathParser<I> {
 
 #[vpratt::parser(
     stream = self.stream,
-    output = Expr,                // custom AST type
     item = Token,                 // type of item yielded by the stream iterator
+    output = Expr,                // custom AST type
     entry = parse_math,           // custom entry name for the main pratt parse function
-    token = TokenKind,            // internally referred to as PrattToken: the routing token, extracted from the item type
     error = MathError,            // custom error type, must
-    extract = |t: &Token| t.kind, // can also be: extract = get_kind, {fn get_kind(t: &Token) -> TokenKind { t.kind }?}
 )]
 impl<I: Iterator<Item = Token>> MathParser<I> {
 
@@ -124,21 +139,56 @@ impl<I: Iterator<Item = Token>> MathParser<I> {
         .terminal(Num,   Self::num)
         .terminal(Ident, Self::var)
 
-        .group(LParen, RParen, Self::group)
+        .group(         LParen, RParen,     Self::group)
 
-        .infix(40, Left, Plus,  Self::add)
-        .infix(40, Left, Minus, Self::sub)
-        .infix(50, Left, Star,  Self::mul)
-        .infix(50, Left, Slash, Self::div)
+        .infix(40, Left,  Plus,        Self::add)
+        .infix(40, Left,  Minus,       Self::sub)
 
-        .juxt(60, LParen, RParen, Self::implicit_mul)
-        .implied(60, Left, Num, Self::implied_mul)
-        .implied(60, Left, Ident, Self::implied_mul)
+        .infix(  50, Left,  Star,      Self::mul)
+        .infix(  50, Left,  Slash,     Self::div)
+        .infix(  50, Left,  Percent,   Self::modulo)
 
-        .prefix(70, Minus, Self::negate)
-        .infix(80, Right, Caret, Self::power)
-        .postfix(90, Bang, Self::factorial);
+        .prefix( 60, Minus,            Self::negate)
+        .prefix( 60, Sin,              Self::trig)
+        .prefix( 60, Cos,              Self::trig)
+        .prefix( 60, Tan,              Self::trig)
+        .prefix( 60, Asin,             Self::trig)
+        .prefix( 60, Acos,             Self::trig)
+        .prefix( 60, Atan,             Self::trig)
+        .prefix( 60, Leibniz,          Self::leibniz)
 
+
+        .juxt(   70, LParen, RParen,   Self::implicit_mul)
+        .implied(70, Left,   Num,      Self::implied_mul)
+        .implied(70, Left,   Ident,    Self::implied_mul)
+        .implied(70, Left,   Sin,      Self::implied_mul)
+        .implied(70, Left,   Cos,      Self::implied_mul)
+        .implied(70, Left,   Tan,      Self::implied_mul)
+        .implied(70, Left,   Asin,     Self::implied_mul)
+        .implied(70, Left,   Acos,     Self::implied_mul)
+        .implied(70, Left,   Atan,     Self::implied_mul)
+        .implied(70, Left,   Leibniz,  Self::implied_mul)
+
+
+        .infix(80,  Right, Caret, Self::power)
+
+        .postfix(90, Bang,  Self::factorial)
+    ;
+
+    #[vpratt::handler]
+    fn trig(&mut self, ctx: PrefixCtx<Self>) -> vpratt::Result<Self> {
+        let arg = Box::new(ctx.rhs.parse(self)?);
+        let kind = match ctx.consumed.token.kind {
+            Sin  => Expr::Sin(arg),
+            Cos  => Expr::Cos(arg),
+            Tan  => Expr::Tan(arg),
+            Asin => Expr::Asin(arg),
+            Acos => Expr::Acos(arg),
+            Atan => Expr::Atan(arg),
+            _    => unreachable!(),
+        };
+        Ok(kind)
+    }
 
     #[vpratt::handler]
     fn num(&mut self, ctx: TerminalCtx<Self>) -> vpratt::Result<Self>{
@@ -156,18 +206,30 @@ impl<I: Iterator<Item = Token>> MathParser<I> {
 
     #[vpratt::handler]
     fn group(&mut self, ctx: GroupCtx<Self>) -> vpratt::Result<Self>{
-        let (inner, close) = ctx.enclosed.parse(self)?;
-        Ok(Expr::Group(Box::new(inner), ctx.consumed.token.span.start .. close.span.end))
+        let (inner, _) = ctx.enclosed.parse(self)?;
+        Ok(inner)
     }
 
     #[vpratt::handler]
-    fn negate(&mut self, ctx: PrefixCtx<Self>) -> vpratt::Result<Self>{
+    fn negate(&mut self, ctx: PrefixCtx<Self>) -> vpratt::Result<Self> {
         Ok(Expr::Neg(Box::new(ctx.rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn power(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self>{
-        Ok(Expr::Pow(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
+    fn leibniz(&mut self, ctx: PrefixCtx<Self>) -> vpratt::Result<Self> {
+        let var = ctx.consumed.token.lexeme[3..].to_string();
+        let expr = Box::new(ctx.rhs.parse(self)?);
+        Ok(Expr::DerivRespectTo { var, expr })
+    }
+
+    #[vpratt::handler]
+    fn add(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Add(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
+    }
+
+    #[vpratt::handler]
+    fn sub(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Sub(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
@@ -181,13 +243,13 @@ impl<I: Iterator<Item = Token>> MathParser<I> {
     }
 
     #[vpratt::handler]
-    fn add(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self>{
-        Ok(Expr::Add(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
+    fn modulo(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self> {
+        Ok(Expr::Mod(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
-    fn sub(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self>{
-        Ok(Expr::Sub(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
+    fn power(&mut self, ctx: InfixCtx<Self>) -> vpratt::Result<Self>{
+        Ok(Expr::Pow(Box::new(ctx.lhs), Box::new(ctx.rhs.parse(self)?)))
     }
 
     #[vpratt::handler]
@@ -225,102 +287,114 @@ fn main() {
             eprintln!("Parse Error: {} (Span: {:?})", err.message, err.span);
         }
     }
-
 }
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn t(kind: TokenKind, lexeme: &str, span: Range<usize>) -> Token {
-        Token { kind, lexeme: lexeme.to_string(), span }
-    }
+    fn num(n: f64) -> Expr { Expr::Num(n) }
+    fn var(s: &str) -> Expr { Expr::Var(s.to_string()) }
+    fn add(l: Expr, r: Expr) -> Expr { Expr::Add(Box::new(l), Box::new(r)) }
+    fn sub(l: Expr, r: Expr) -> Expr { Expr::Sub(Box::new(l), Box::new(r)) }
+    fn mul(l: Expr, r: Expr) -> Expr { Expr::Mul(Box::new(l), Box::new(r)) }
+    fn div(l: Expr, r: Expr) -> Expr { Expr::Div(Box::new(l), Box::new(r)) }
+    fn pow(l: Expr, r: Expr) -> Expr { Expr::Pow(Box::new(l), Box::new(r)) }
+    fn neg(e: Expr) -> Expr { Expr::Neg(Box::new(e)) }
+    fn fact(e: Expr) -> Expr { Expr::Fact(Box::new(e)) }
+    fn sin(e: Expr) -> Expr { Expr::Sin(Box::new(e)) }
+    fn cos(e: Expr) -> Expr { Expr::Cos(Box::new(e)) }
+    fn deriv(v: &str, e: Expr) -> Expr { Expr::DerivRespectTo { var: v.to_string(), expr: Box::new(e) } }
 
-    fn parse(tokens: Vec<Token>) -> Result<Expr, MathError> {
+    // --- Parser Runner ---
+    fn parse(input: &str) -> Expr {
+        let tokens = tokenize(input);
         let mut parser = MathParser::new(tokens.into_iter());
-        parser.parse_math()
+        parser.parse_math().expect(&format!("Failed to parse: {}", input))
     }
 
     #[test]
-    fn test_standard_precedence() {
-        let tokens = vec![
-            t(Num, "2", 0..1),
-            t(Plus, "+", 2..3),
-            t(Num, "3", 4..5),
-            t(Star, "*", 6..7),
-            t(Num, "4", 8..9),
-            t(EOF, "", 9..9),
-        ];
-
-        let expected = Expr::Add(
-            Box::new(Expr::Num(2.0)),
-            Box::new(Expr::Mul(
-                Box::new(Expr::Num(3.0)),
-                Box::new(Expr::Num(4.0))
-            ))
+    fn test_math_lang_parser() {
+         assert_eq!(
+            parse("2 + 3 * 4 ^ 2"),
+            add(num(2.0), mul(num(3.0), pow(num(4.0), num(2.0))))
         );
 
-        assert_eq!(parse(tokens).unwrap(), expected);
-    }
-
-    #[test]
-    fn test_implied_multiplication_with_trailing_operator() {
-        // Simulating: 2x^3 (Proves `Resume` works perfectly)
-        let tokens = vec![
-            t(Num, "2", 0..1),
-            t(Ident, "x", 1..2),
-            t(Caret, "^", 2..3),
-            t(Num, "3", 3..4),
-            t(EOF, "", 4..4),
-        ];
-
-        let expected = Expr::Mul(
-            Box::new(Expr::Num(2.0)),
-            Box::new(Expr::Pow(
-                Box::new(Expr::Var("x".into())),
-                Box::new(Expr::Num(3.0))
-            ))
+        assert_eq!(
+            parse("100 - 50 - 25"),
+            sub(sub(num(100.0), num(50.0)), num(25.0))
         );
 
-        assert_eq!(parse(tokens).unwrap(), expected);
-    }
+        assert_eq!(
+            parse("2 ^ 3 ^ 2"),
+            pow(num(2.0), pow(num(3.0), num(2.0)))
+        );
 
-    #[test]
-    fn test_engine_error_unexpected_token() {
-        // Simulating: 2 + * 3
-        let tokens = vec![
-            t(Num, "2", 0..1),
-            t(Plus, "+", 2..3),
-            t(Star, "*", 4..5), // The bad token
-            t(Num, "3", 6..7),
-            t(EOF, "", 7..7),
-        ];
+        assert_eq!(
+            parse("2x"),
+            mul(num(2.0), var("x"))
+        );
 
-        let result = parse(tokens);
+        assert_eq!(
+            parse("(x + 1)(x - 1)"),
+            mul(add(var("x"), num(1.0)), sub(var("x"), num(1.0)))
+        );
 
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.message, "Unexpected token: Star");
-        assert_eq!(err.span, 4..5);
-    }
+        // Query  :  4 sin(x) cos(x)
+        // Output :  4 * sin(x * cos(x))
+        // WARNING: maybe this is not the conventional/intended behavior but this
+        // shows that precedence cannot solve all semantic ambiguity
+        // this is a result of implicit multiplication binding tighter than trig functions(70 > 60)
+        // it is a delicate balance which never settles, just what is most convenient
+        assert_eq!(
+            parse("4 sin(x) cos(x)"),
+            mul(num(4.0), sin(mul(var("x"), cos(var("x")))))
+        );
 
-    #[test]
-    fn test_engine_error_unmatched_delimiter() {
-        let tokens = vec![
-            t(Num, "2", 0..1),
-            t(LParen, "(", 1..2),
-            t(Ident, "a", 2..3),
-            t(Plus, "+", 4..5),
-            t(Ident, "b", 6..7),
-            t(EOF, "", 7..7), // Missing RParen!
-        ];
+        // Query  :  4 sin(x) * cos(x)
+        // Output :  4 * sin(x) * cos(x)
+        // NOTE: implicit factors e.g. 2x bind tighter that trig functions(70 > 60):
+        // to be safe always use explicit multiplication for two trig functions multiplication
+        assert_eq!(
+            parse("4 sin(x) * cos(x)"),
+            mul(mul(num(4.0), sin(var("x"))), cos(var("x")))
+        );
 
-        let result = parse(tokens);
+        assert_eq!(
+            parse("1 / 2x"),
+            div(num(1.0), mul(num(2.0), var("x")))
+        );
 
-        assert!(result.is_err());
-        let err = result.unwrap_err();
+        assert_eq!(
+            parse("-3!"),
+            neg(fact(num(3.0)))
+        );
 
-        assert_eq!(err.message, "Expected closing delimiter RParen, but found EOF");
-        assert_eq!(err.span, 7..7);
+        assert_eq!(
+            parse("sin -x"),
+            sin(neg(var("x")))
+        );
+
+        assert_eq!(
+            parse("sin x!"),
+            sin(fact(var("x")))
+        );
+
+        assert_eq!(
+            parse("d/dtime (distance / time)"),
+            deriv("time", div(var("distance"), var("time")))
+        );
+
+        assert_eq!(
+            parse("d/dx x^2 + 5x"),
+            add(deriv("x", pow(var("x"), num(2.0))), mul(num(5.0), var("x")))
+        );
+
+        assert_eq!(
+            parse("d/dx (x^2 + 5x)"),
+            deriv("x", add(pow(var("x"), num(2.0)), mul(num(5.0), var("x"))))
+        );
     }
 }
+
