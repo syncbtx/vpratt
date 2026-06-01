@@ -1,6 +1,6 @@
 [package]
 name = "vpratt"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2024"
 authors = ["synkibe@gmail.com"]
 description = "absolute zenith of pratt parsing"
@@ -8,7 +8,7 @@ repository = "https://github.com/syncbtx/vpratt"
 homepage = "https://github.com/syncbtx/vpratt"
 documentation = "https://doc.rs/vpratt"
 license = "MIT "
-readme = "../../README.md"
+readme = "README.md"
 keywords = ["parser", "pratt", "expression", "compiler", "ast"]
 categories = ["compilers","parsing", "no-std"]
 
