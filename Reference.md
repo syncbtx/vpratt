@@ -491,6 +491,8 @@ impl<'a> Parser<'a> {
 
 Applied to your token type — a struct, enum, or type alias. Tells vpratt how to extract the routing token from a stream item, and optionally where the span is.
 
+> Note: this only works if both the Item and PrattToken types don't have explicit lifetimes.
+
 ```rust
 // item is its own routing token
 #[vpratt::token(self)]
@@ -498,8 +500,8 @@ pub enum TokenKind { ... }
 
 // item wraps the routing token in a named field
 #[vpratt::token(kind, span)]
-pub struct Token<'a> {
-    pub kind: TokenKind<'a>,
+pub struct Token{
+    pub kind: TokenKind,
     pub span: Span,
 }
 
@@ -509,20 +511,20 @@ pub type LogosToken = (TokenKind, Span);
 ```
 When applied, token and extract can be omitted from #[vpratt::parser]:
 
-```rust
+```rust 
 // without #[vpratt::token] — explicit
 #[vpratt::parser(
     stream  = self.stream,
-    item    = Token<'a>,
-    token   = TokenKind<'a>,
+    item    = Token,
+    token   = TokenKind,
     output  = Expr,
-    extract = |t: &Token<'a>| t.kind.clone(),
+    extract = |t: &Token| t.kind.clone(),
 )]
 
 // with #[vpratt::token(kind)] — token and extract derived
 #[vpratt::parser(
     stream = self.stream,
-    item   = Token<'a>,
+    item   = Token,
     output = Expr,
 )]
 ```
